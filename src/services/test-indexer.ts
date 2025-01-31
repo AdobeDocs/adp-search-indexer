@@ -1,0 +1,135 @@
+import { writeFile } from 'node:fs/promises';
+import type { AlgoliaRecord } from '../types/algolia';
+import type { SitemapUrl } from '../types';
+import { fetchPageContent } from './content';
+import { AlgoliaService } from './algolia';
+import { TaskQueue } from '../utils/queue';
+
+interface IndexingStats {
+  total: number;
+  success: number;
+  notFound: number;
+  failed: number;
+  products: Map<string, number>;
+  types: Map<string, number>;
+}
+
+export class TestIndexer {
+  private algolia: AlgoliaService;
+  private queue: TaskQueue;
+  private stats: IndexingStats;
+
+  constructor(algolia: AlgoliaService) {
+    this.algolia = algolia;
+    this.queue = new TaskQueue(5);
+    this.stats = {
+      total: 0,
+      success: 0,
+      notFound: 0,
+      failed: 0,
+      products: new Map(),
+      types: new Map(),
+    };
+  }
+
+  async initialize(): Promise<void> {
+    await this.algolia.initialize();
+  }
+
+  private updateStats(record: AlgoliaRecord | null, error?: Error): void {
+    this.stats.total++;
+    
+    if (record) {
+      this.stats.success++;
+      this.stats.products.set(record.product, (this.stats.products.get(record.product) || 0) + 1);
+      this.stats.types.set(record.type, (this.stats.types.get(record.type) || 0) + 1);
+    } else if (error?.message.includes('Not Found')) {
+      this.stats.notFound++;
+    } else {
+      this.stats.failed++;
+    }
+  }
+
+  async processUrl(url: SitemapUrl): Promise<AlgoliaRecord | null> {
+    try {
+      console.log(`Processing: ${url.loc}`);
+      const content = await fetchPageContent(url.loc);
+      const record = this.algolia.createRecord(content, url);
+      
+      if (record) {
+        this.updateStats(record);
+        console.log(`✅ Successfully processed: ${url.loc}`);
+      } else {
+        console.warn(`⚠️ No record created for: ${url.loc}`);
+        this.updateStats(null);
+      }
+      
+      return record;
+    } catch (error) {
+      if (error instanceof Error) {
+        this.updateStats(null, error);
+        if (error.message.includes('Not Found')) {
+          console.warn(`⚠️ Skipping ${url.loc}: Page not found`);
+        } else {
+          console.error(`❌ Failed to process ${url.loc}:`, error);
+        }
+      }
+      return null;
+    }
+  }
+
+  async processUrls(urls: SitemapUrl[]): Promise<AlgoliaRecord[]> {
+    console.log('\n📝 Processing URLs');
+    console.log('================');
+    
+    const records: AlgoliaRecord[] = [];
+    const promises: Promise<void>[] = [];
+
+    for (const url of urls) {
+      promises.push(
+        this.queue.add(async () => {
+          const record = await this.processUrl(url);
+          if (record) {
+            records.push(record);
+          }
+        })
+      );
+    }
+
+    await Promise.all(promises);
+    return records;
+  }
+
+  private printStats(): void {
+    console.log('\n📊 Indexing Statistics');
+    console.log('===================');
+    console.log(`Total URLs processed: ${this.stats.total}`);
+    console.log(`Successfully indexed: ${this.stats.success}`);
+    console.log(`Not found (404): ${this.stats.notFound}`);
+    console.log(`Failed: ${this.stats.failed}`);
+    
+    console.log('\n📈 Product Distribution');
+    console.log('====================');
+    for (const [product, count] of this.stats.products) {
+      console.log(`${product}: ${count} pages`);
+    }
+    
+    console.log('\n🏷️  Content Type Distribution');
+    console.log('=========================');
+    for (const [type, count] of this.stats.types) {
+      console.log(`${type}: ${count} pages`);
+    }
+  }
+
+  async run(urls: SitemapUrl[]): Promise<void> {
+    console.log('🔄 Initializing test indexer...');
+    await this.initialize();
+
+    const records = await this.processUrls(urls);
+    
+    console.log('\n💾 Saving records to Algolia and generating test files...');
+    await this.algolia.saveRecords(records);
+
+    this.printStats();
+  }
+} 
