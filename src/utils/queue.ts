@@ -1,42 +1,31 @@
 export class TaskQueue {
-  private running = 0;
-  private queue: (() => Promise<void>)[] = [];
-  private readonly maxConcurrency: number;
+  private concurrency: number;
+  private running: number;
+  private queue: (() => Promise<void>)[];
 
-  constructor(maxConcurrency: number) {
-    this.maxConcurrency = maxConcurrency;
+  constructor(concurrency: number) {
+    this.concurrency = concurrency;
+    this.running = 0;
+    this.queue = [];
   }
 
-  async add(task: () => Promise<void>): Promise<void> {
-    if (this.running >= this.maxConcurrency) {
-      // Queue the task if we're at max concurrency
-      return new Promise<void>((resolve) => {
+  async add<T>(task: () => Promise<T>): Promise<T> {
+    if (this.running >= this.concurrency) {
+      await new Promise<void>(resolve => {
         this.queue.push(async () => {
-          await task();
           resolve();
         });
       });
     }
 
-    // Run the task immediately if we're under max concurrency
     this.running++;
     try {
-      await task();
+      return await task();
     } finally {
       this.running--;
-      this.runNext();
-    }
-  }
-
-  private runNext(): void {
-    if (this.queue.length > 0 && this.running < this.maxConcurrency) {
-      const task = this.queue.shift();
-      if (task) {
-        this.running++;
-        task().finally(() => {
-          this.running--;
-          this.runNext();
-        });
+      if (this.queue.length > 0) {
+        const next = this.queue.shift();
+        if (next) next();
       }
     }
   }

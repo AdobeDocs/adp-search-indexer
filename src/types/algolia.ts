@@ -58,4 +58,22 @@ export interface IndexingResult {
   recordCount: number;
   status: 'success' | 'error';
   error?: Error;
+}
+
+export interface AlgoliaIndexSettings {
+  searchableAttributes: string[];
+  attributesForFaceting: string[];
+  customRanking: string[];
+  ranking: string[];
+  minWordSizefor1Typo: number;
+  minWordSizefor2Typos: number;
+  queryLanguages: string[];
+  removeStopWords: boolean | string[];
+  advancedSyntax: boolean;
+  synonyms?: Array<{
+    objectID: string;
+    type: 'synonym' | 'oneWaySynonym' | 'altCorrection1' | 'altCorrection2';
+    input: string;
+    synonyms: string[];
+  }>;
 } 

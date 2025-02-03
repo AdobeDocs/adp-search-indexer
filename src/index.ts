@@ -10,7 +10,7 @@ async function main() {
     console.log('========================\n');
 
     console.log('🔍 Fetching sitemap...');
-    const urls = await fetchSitemap();
+    const urls = await fetchSitemap(config.sitemap.url);
     
     console.log('\n📊 Analyzing URL patterns...');
     analyzeSitemapPatterns(urls);
@@ -24,6 +24,7 @@ async function main() {
       appId: config.algolia.appId,
       apiKey: config.algolia.apiKey,
       indexName: config.algolia.indexName,
+      testMode: config.algolia.testMode,
     });
 
     // Initialize and run test indexer
@@ -38,4 +39,13 @@ async function main() {
 
 // Start the indexing process
 console.log('🚀 Starting the indexer...\n');
+
+// Log configuration
+console.log('📝 Configuration:');
+console.log('----------------');
+console.log(`• Mode: ${config.app.mode}`);
+console.log(`• Index: ${config.app.index || 'all'}`);
+console.log(`• Index Prefix: ${config.app.indexPrefix || 'none'}`);
+console.log(`• Partial Updates: ${config.app.partial ? 'yes' : 'no'}\n`);
+
 main(); 

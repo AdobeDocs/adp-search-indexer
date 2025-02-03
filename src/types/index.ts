@@ -11,7 +11,7 @@ export interface Sitemap {
   };
 }
 
-export interface Config {
+export type Config = {
   sitemap: {
     url: string;
   };
@@ -24,5 +24,9 @@ export interface Config {
     logLevel: string;
     batchSize: number;
     maxConcurrentRequests: number;
+    mode: 'index' | 'console' | 'export';
+    index?: string;
+    indexPrefix?: string;
+    partial: boolean;
   };
-} 
+}; 

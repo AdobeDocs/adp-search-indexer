@@ -9,7 +9,8 @@
     "typecheck": "bun x tsc --noEmit",
     "format": "bun x prettier --write .",
     "test": "bun test",
-    "test:watch": "bun test --watch"
+    "test:watch": "bun test --watch",
+    "cleanup": "rm -rf test-output"
   },
   "dependencies": {
     "@algolia/client-search": "^4.22.1",

@@ -1,9 +1,11 @@
 import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { AlgoliaRecord } from '../types/algolia';
 import type { SitemapUrl } from '../types';
 import { fetchPageContent } from './content';
 import { AlgoliaService } from './algolia';
 import { TaskQueue } from '../utils/queue';
+import { ensureDir } from '../utils/ensure-dir';
 
 interface IndexingStats {
   total: number;
@@ -18,6 +20,7 @@ export class TestIndexer {
   private algolia: AlgoliaService;
   private queue: TaskQueue;
   private stats: IndexingStats;
+  private outputDir: string;
 
   constructor(algolia: AlgoliaService) {
     this.algolia = algolia;
@@ -30,6 +33,7 @@ export class TestIndexer {
       products: new Map(),
       types: new Map(),
     };
+    this.outputDir = join(process.cwd(), 'test-output');
   }
 
   async initialize(): Promise<void> {
@@ -122,14 +126,22 @@ export class TestIndexer {
   }
 
   async run(urls: SitemapUrl[]): Promise<void> {
-    console.log('🔄 Initializing test indexer...');
-    await this.initialize();
+    try {
+      console.log('🔄 Initializing test indexer...');
+      
+      // Ensure output directory exists
+      await ensureDir(this.outputDir);
 
-    const records = await this.processUrls(urls);
-    
-    console.log('\n💾 Saving records to Algolia and generating test files...');
-    await this.algolia.saveRecords(records);
+      await this.initialize();
 
-    this.printStats();
+      const records = await this.processUrls(urls);
+      
+      console.log('\n💾 Saving records to Algolia and generating test files...');
+      await this.algolia.saveRecords(records);
+
+      this.printStats();
+    } catch (error) {
+      console.error('❌ Error running test indexer:', error);
+    }
   }
 } 

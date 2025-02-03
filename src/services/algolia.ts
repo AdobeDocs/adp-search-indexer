@@ -1,41 +1,170 @@
 import algoliasearch from 'algoliasearch';
 import type { SearchClient, SearchIndex } from 'algoliasearch';
-import type { AlgoliaRecord, IndexConfig, ProductIndexMapping, IndexingResult } from '../types/algolia';
+import type { AlgoliaRecord, IndexConfig, ProductIndexMapping, IndexingResult, AlgoliaIndexSettings } from '../types/algolia';
 import type { PageContent } from './content';
 import type { SitemapUrl } from '../types';
+import { config } from '../config/config';
+import { writeFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
 
 export class AlgoliaService {
   private client: SearchClient;
   private indices: Map<string, SearchIndex> = new Map();
   private productMappings: ProductIndexMapping[] = [];
+  private verbose: boolean;
+  private testMode: 'file' | 'console' | 'none';
 
-  constructor(config: IndexConfig) {
+  constructor(config: IndexConfig & { testMode: 'file' | 'console' | 'none' }) {
     this.client = algoliasearch(config.appId, config.apiKey);
+    this.verbose = process.argv.includes('--verbose');
+    this.testMode = config.testMode;
+  }
+
+  private log(message: string, type: 'info' | 'warn' | 'error' = 'info', forceShow = false) {
+    if (this.verbose || forceShow) {
+      switch (type) {
+        case 'warn':
+          console.warn(message);
+          break;
+        case 'error':
+          console.error(message);
+          break;
+        default:
+          console.log(message);
+      }
+    }
+  }
+
+  private async saveTestData(indexName: string, data: unknown, type: 'settings' | 'records'): Promise<void> {
+    if (this.testMode === 'none') return;
+
+    if (this.testMode === 'console') {
+      console.log(`\n📝 Test Data for ${indexName} (${type}):`);
+      console.log(JSON.stringify(data, null, 2));
+      return;
+    }
+
+    try {
+      const outputDir = 'test-output';
+      await Bun.write(`${outputDir}/.gitkeep`, '');
+      
+      const fileName = `${indexName}-${type}.json`;
+      const filePath = `${outputDir}/${fileName}`;
+      
+      const file = Bun.file(filePath);
+      await Bun.write(file, JSON.stringify(data, null, 2));
+      this.log(`💾 Saved test ${type} to ${filePath}`, 'info', true);
+    } catch (error) {
+      this.log(`Failed to save test data: ${error}`, 'error', true);
+    }
+  }
+
+  private async configureIndexSettings(index: SearchIndex): Promise<void> {
+    const settings: AlgoliaIndexSettings = {
+      searchableAttributes: [
+        'title',
+        'unordered(headings)',
+        'unordered(description)',
+        'unordered(content)',
+        'topics',
+        'hierarchy.lvl0',
+        'hierarchy.lvl1',
+        'hierarchy.lvl2'
+      ],
+      attributesForFaceting: [
+        'filterOnly(product)',
+        'filterOnly(type)',
+        'filterOnly(topics)',
+        'filterOnly(hierarchy.lvl0)',
+        'filterOnly(hierarchy.lvl1)',
+        'filterOnly(hierarchy.lvl2)'
+      ],
+      customRanking: [
+        'desc(lastModified)',
+        'asc(hierarchy.lvl0)',
+        'asc(hierarchy.lvl1)',
+        'asc(hierarchy.lvl2)'
+      ],
+      ranking: [
+        'typo',
+        'geo',
+        'words',
+        'filters',
+        'proximity',
+        'attribute',
+        'exact',
+        'custom'
+      ],
+      minWordSizefor1Typo: 4,
+      minWordSizefor2Typos: 8,
+      queryLanguages: ['en'],
+      removeStopWords: true,
+      advancedSyntax: true
+    };
+
+    // Save settings in test mode
+    await this.saveTestData(index.indexName, settings, 'settings');
+
+    // Only send to Algolia if not in test mode
+    if (this.testMode === 'none') {
+      try {
+        await index.setSettings(settings);
+        this.log('✅ Index settings configured successfully');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.log(`Failed to configure index settings: ${message}`, 'error', true);
+        throw error;
+      }
+    }
   }
 
   async initialize(): Promise<void> {
     try {
       // Fetch product mappings from GitHub
-      const response = await fetch('https://raw.githubusercontent.com/AdobeDocs/search-indices/refs/heads/main/product-index-map.json');
+      const response = await Bun.fetch(
+        'https://raw.githubusercontent.com/AdobeDocs/search-indices/refs/heads/main/product-index-map.json',
+        {
+          client: 'bun',
+          timeout: 10000
+        }
+      );
+      
       if (!response.ok) {
         throw new Error(`Failed to fetch product mappings: ${response.statusText}`);
       }
+      
       this.productMappings = await response.json();
       
       // Log mapping statistics
       const totalProducts = this.productMappings.length;
       const totalIndices = this.productMappings.reduce((sum, p) => sum + p.productIndices.length, 0);
-      const indexPaths = this.productMappings.flatMap(p => 
-        p.productIndices.map(i => `${p.productName}: ${i.indexPathPrefix} -> ${i.indexName}`)
-      );
       
-      console.log(`✅ Product mappings loaded successfully:`);
-      console.log(`   - Total products: ${totalProducts}`);
-      console.log(`   - Total indices: ${totalIndices}`);
-      console.log('   - Index paths:');
-      indexPaths.forEach(path => console.log(`     ${path}`));
+      this.log('📊 Initialization Summary:', 'info', true);
+      this.log(`   • Products: ${totalProducts}`, 'info', true);
+      this.log(`   • Indices: ${totalIndices}`, 'info', true);
+      if (this.testMode !== 'none') {
+        this.log(`   • Test Mode: ${this.testMode}`, 'info', true);
+      }
+
+      if (this.verbose) {
+        this.log('\nDetailed Index Mappings:');
+        this.productMappings.forEach(p => {
+          p.productIndices.forEach(i => {
+            this.log(`   ${p.productName}: ${i.indexPathPrefix} -> ${i.indexName}`);
+          });
+        });
+      }
+
+      // Configure settings for each index
+      const uniqueIndices = new Set(this.productMappings.flatMap(p => p.productIndices.map(i => i.indexName)));
+      for (const indexName of uniqueIndices) {
+        const index = this.getIndex(indexName);
+        await this.configureIndexSettings(index);
+      }
     } catch (error) {
-      console.error('Failed to initialize product mappings:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      this.log('Failed to initialize: ' + message, 'error', true);
       throw error;
     }
   }
@@ -46,7 +175,7 @@ export class AlgoliaService {
     
     // Special case for root URLs
     if (urlPath === '/' || urlPath === '') {
-      console.log('ℹ️ Using default mapping for root URL');
+      this.log('Using default mapping for root URL');
       return {
         indexName: 'developer-site',
         productName: 'Adobe Developer'
@@ -85,15 +214,10 @@ export class AlgoliaService {
       matches.sort((a, b) => b.segments - a.segments);
       
       const bestMatch = matches[0];
-      console.log(`✅ Found index mapping for ${urlPath}:`);
-      console.log(`   - Product: ${bestMatch.product}`);
-      console.log(`   - Index: ${bestMatch.index}`);
-      console.log(`   - Path prefix: ${bestMatch.prefix}`);
-      if (matches.length > 1) {
-        console.log(`   - Note: Selected most specific match (${matches.length} total matches):`);
-        matches.slice(1).forEach(m => 
-          console.log(`     • ${m.prefix} -> ${m.index}`)
-        );
+      this.log(`Found mapping: ${bestMatch.product} -> ${bestMatch.index}`, 'info');
+      if (this.verbose && matches.length > 1) {
+        this.log('Alternative matches:');
+        matches.slice(1).forEach(m => this.log(`  • ${m.prefix} -> ${m.index}`));
       }
       
       return {
@@ -103,13 +227,15 @@ export class AlgoliaService {
     }
 
     // Log that no mapping was found
-    console.warn(`❌ No index mapping found for URL: ${urlPath}`);
-    console.warn('Available path prefixes that were checked:');
-    this.productMappings.forEach(product => {
-      product.productIndices.forEach(index => {
-        console.warn(`   - ${index.indexPathPrefix} (${product.productName} -> ${index.indexName})`);
+    this.log(`No index mapping found for URL: ${urlPath}`, 'warn', true);
+    if (this.verbose) {
+      this.log('Available path prefixes:');
+      this.productMappings.forEach(product => {
+        product.productIndices.forEach(index => {
+          this.log(`  • ${index.indexPathPrefix} (${product.productName} -> ${index.indexName})`);
+        });
       });
-    });
+    }
     
     return null;
   }
@@ -262,59 +388,84 @@ export class AlgoliaService {
         const fallbackProduct = segments[0].charAt(0).toUpperCase() + segments[0].slice(1);
         const fallbackIndex = `franklin-${segments[0]}`;
         
-        console.warn(`⚠️ Creating fallback record for unmapped URL: ${url}`);
-        console.warn(`   - Using fallback product: ${fallbackProduct}`);
-        console.warn(`   - Using fallback index: ${fallbackIndex}`);
+        this.log(`⚠️ Creating fallback record for unmapped URL: ${url}`);
+        this.log(`   - Using fallback product: ${fallbackProduct}`);
+        this.log(`   - Using fallback index: ${fallbackIndex}`);
         
-        return this.createRecordWithFallback(content, sitemapUrl, {
-          indexName: fallbackIndex,
-          productName: `Adobe ${fallbackProduct}`
-        });
+        return {
+          objectID: this.createObjectId(url.toString()),
+          url: url.toString(),
+          title: content.title || this.cleanContent(content.headings[0] || ''),
+          description: this.cleanContent(content.metadata['description'] || content.metadata['og:description'] || ''),
+          content: this.cleanContent(content.mainContent),
+          contentSegments: this.segmentContent(content.mainContent),
+          headings: content.headings.map(h => this.cleanContent(h)),
+          lastModified: sitemapUrl.lastmod || new Date().toISOString(),
+          product: fallbackProduct,
+          topics: this.extractTopics(content),
+          hierarchy: this.extractHierarchy(url.toString()),
+          type: this.determineType(url.toString()),
+          metadata: {
+            og: {
+              title: content.metadata['og:title'],
+              description: this.cleanContent(content.metadata['og:description'] || ''),
+              image: content.metadata['og:image'],
+            },
+            keywords: content.metadata['keywords']?.split(',').map(k => k.trim()),
+            products: content.metadata['products']?.split(',').map(p => p.trim()),
+            embeddedUrls: this.extractUrls(content.mainContent)
+          }
+        };
       }
       
-      console.error(`❌ Cannot create record for URL: ${url} - No mapping found and cannot create fallback`);
       return null;
     }
-
-    return this.createRecordWithFallback(content, sitemapUrl, indexInfo);
-  }
-
-  private createRecordWithFallback(
-    content: PageContent, 
-    sitemapUrl: SitemapUrl,
-    indexInfo: { indexName: string; productName: string }
-  ): AlgoliaRecord {
-    const url = new URL(content.url);
-    const type = this.determineType(url.toString());
-    const cleanContent = this.cleanContent(content.mainContent);
-    const segments = this.segmentContent(cleanContent);
-    const topics = this.extractTopics(content);
-    const urls = this.extractUrls(content.mainContent);
 
     return {
       objectID: this.createObjectId(url.toString()),
       url: url.toString(),
       title: content.title || this.cleanContent(content.headings[0] || ''),
       description: this.cleanContent(content.metadata['description'] || content.metadata['og:description'] || ''),
-      content: cleanContent,
-      contentSegments: segments,
+      content: this.cleanContent(content.mainContent),
+      contentSegments: this.segmentContent(content.mainContent),
       headings: content.headings.map(h => this.cleanContent(h)),
       lastModified: sitemapUrl.lastmod || new Date().toISOString(),
       product: indexInfo.productName,
-      topics,
+      topics: this.extractTopics(content),
       hierarchy: this.extractHierarchy(url.toString()),
-      type,
+      type: this.determineType(url.toString()),
       metadata: {
         og: {
           title: content.metadata['og:title'],
           description: this.cleanContent(content.metadata['og:description'] || ''),
           image: content.metadata['og:image'],
         },
-        keywords: content.metadata['keywords']?.split(',').map((k: string) => k.trim()),
-        products: content.metadata['products']?.split(',').map((p: string) => p.trim()),
-        embeddedUrls: urls,
-      },
+        keywords: content.metadata['keywords']?.split(',').map(k => k.trim()),
+        products: content.metadata['products']?.split(',').map(p => p.trim()),
+        embeddedUrls: this.extractUrls(content.mainContent)
+      }
     };
+  }
+
+  private validateRecords(records: AlgoliaRecord[]): string[] {
+    const issues: string[] = [];
+    
+    for (const record of records) {
+      if (!record.objectID) {
+        issues.push(`Record missing objectID: ${record.url}`);
+      }
+      if (!record.title) {
+        issues.push(`Record missing title: ${record.url}`);
+      }
+      if (!record.url) {
+        issues.push('Record missing URL');
+      }
+      if (!record.lastModified) {
+        issues.push(`Record missing lastModified: ${record.url}`);
+      }
+    }
+    
+    return issues;
   }
 
   async saveRecords(records: AlgoliaRecord[]): Promise<IndexingResult[]> {
@@ -330,16 +481,16 @@ export class AlgoliaService {
     // First, group records by index
     const recordsByIndex = new Map<string, AlgoliaRecord[]>();
     
-    console.log('\n📊 Processing Records');
-    console.log('==================');
-    console.log(`Total records to process: ${records.length}`);
+    this.log('\n📊 Processing Records', 'info', true);
+    this.log('==================', 'info', true);
+    this.log(`Total records to process: ${records.length}`, 'info', true);
     
     // Group and validate records
     for (const record of records) {
       const indexInfo = this.getIndexForUrl(record.url);
       if (!indexInfo) {
-        console.log(`⚠️  Skipping record: ${record.url}`);
-        console.log('   Reason: No matching index found in product mapping');
+        this.log(`⚠️  Skipping record: ${record.url}`, 'warn');
+        this.log('   Reason: No matching index found in product mapping', 'warn');
         stats.skipped++;
         continue;
       }
@@ -353,38 +504,38 @@ export class AlgoliaService {
 
     // Process each index
     const results: IndexingResult[] = [];
-    console.log('\n📝 Processing Indices');
-    console.log('===================');
+    this.log('\n📝 Processing Indices', 'info', true);
+    this.log('===================', 'info', true);
     
     for (const [indexName, indexRecords] of recordsByIndex.entries()) {
-      console.log(`\n🔍 Processing index: ${indexName}`);
-      console.log(`   Records to process: ${indexRecords.length}`);
+      this.log(`\n🔍 Processing index: ${indexName}`, 'info', true);
+      this.log(`   Records to process: ${indexRecords.length}`, 'info', true);
       
       try {
         // Validate records
         const validationIssues = this.validateRecords(indexRecords);
         if (validationIssues.length > 0) {
-          console.log('   ⚠️  Validation issues found:');
-          validationIssues.forEach(issue => console.log(`      - ${issue}`));
+          this.log('   ⚠️  Validation issues found:', 'warn');
+          validationIssues.forEach(issue => this.log(`      - ${issue}`, 'warn'));
         }
 
-        // Always try to save local test records first
-        await this.outputRecordsToFile(indexName, indexRecords);
+        // Save test data
+        await this.saveTestData(indexName, indexRecords, 'records');
 
-        // Try to save to Algolia if credentials are provided
-        if (this.client) {
+        // Only send to Algolia if not in test mode
+        if (this.testMode === 'none') {
           try {
             const index = this.getIndex(indexName);
             const result = await index.saveObjects(indexRecords);
             await index.waitTask(result.taskIDs[0]);
-            console.log('   ✅ Successfully uploaded to Algolia');
-          } catch (error: unknown) {
-            const algoliaError = error as Error;
-            console.error(`   ⚠️  Failed to upload to Algolia: ${algoliaError.message}`);
-            console.log('   ℹ️  Records were saved locally but not to Algolia');
+            this.log('   ✅ Successfully uploaded to Algolia');
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.log(`   ⚠️  Failed to upload to Algolia: ${message}`, 'error');
+            if (this.testMode === 'none') {
+              this.log('   ℹ️  Consider using --test-file or --test-console to debug', 'info');
+            }
           }
-        } else {
-          console.log('   ℹ️  Skipping Algolia upload (no credentials provided)');
         }
         
         stats.byIndex.set(indexName, indexRecords.length);
@@ -395,144 +546,34 @@ export class AlgoliaService {
           status: 'success'
         });
         
-        console.log('   ✅ Successfully processed');
+        this.log('   ✅ Successfully processed', 'info', true);
       } catch (error) {
-        console.error(`   ❌ Error processing index ${indexName}:`, error);
+        const message = error instanceof Error ? error.message : String(error);
+        this.log(`   ❌ Error processing index ${indexName}: ${message}`, 'error', true);
         stats.errors += indexRecords.length;
         stats.failedIndices++;
         results.push({
           indexName,
           recordCount: 0,
           status: 'error',
-          error: error as Error
+          error: error instanceof Error ? error : new Error(String(error))
         });
       }
     }
 
     // Print final summary
-    console.log('\n📈 Final Summary');
-    console.log('==============');
-    console.log(`Total records processed: ${stats.total}`);
-    console.log(`Records by index:`);
+    this.log('\n📈 Final Summary', 'info', true);
+    this.log('==============', 'info', true);
+    this.log(`Total records processed: ${stats.total}`, 'info', true);
+    this.log(`Records by index:`, 'info', true);
     stats.byIndex.forEach((count, index) => {
-      console.log(`   - ${index}: ${count} records`);
+      this.log(`   - ${index}: ${count} records`, 'info', true);
     });
-    console.log(`Skipped records: ${stats.skipped}`);
-    console.log(`Failed records: ${stats.errors}`);
-    console.log(`Successful indices: ${stats.successfulIndices}`);
-    console.log(`Failed indices: ${stats.failedIndices}`);
+    this.log(`Skipped records: ${stats.skipped}`, 'info', true);
+    this.log(`Failed records: ${stats.errors}`, 'info', true);
+    this.log(`Successful indices: ${stats.successfulIndices}`, 'info', true);
+    this.log(`Failed indices: ${stats.failedIndices}`, 'info', true);
 
     return results;
   }
-
-  private validateRecords(records: AlgoliaRecord[]): string[] {
-    const issues: string[] = [];
-    
-    records.forEach(record => {
-      // Check required fields
-      if (!record.title?.trim()) {
-        issues.push(`Record ${record.objectID} has empty title`);
-      }
-      if (!record.content?.trim()) {
-        issues.push(`Record ${record.objectID} has empty content`);
-      }
-      if (!record.url?.trim()) {
-        issues.push(`Record ${record.objectID} has empty URL`);
-      }
-      
-      // Check content quality
-      if (record.content?.length < 50) {
-        issues.push(`Record ${record.objectID} has very short content (${record.content?.length} chars)`);
-      }
-      if (record.content?.includes('<') && record.content?.includes('>')) {
-        issues.push(`Record ${record.objectID} may contain HTML tags`);
-      }
-      
-      // Check segments
-      if (!record.contentSegments?.length) {
-        issues.push(`Record ${record.objectID} has no content segments`);
-      } else if (record.contentSegments.some(s => s.text.length < 10)) {
-        issues.push(`Record ${record.objectID} has very short segments`);
-      }
-      
-      // Check metadata
-      if (!record.description?.trim()) {
-        issues.push(`Record ${record.objectID} has no description`);
-      }
-      if (!record.topics?.length) {
-        issues.push(`Record ${record.objectID} has no topics`);
-      }
-    });
-    
-    return issues;
-  }
-
-  private async outputRecordsToFile(indexName: string, records: AlgoliaRecord[]): Promise<void> {
-    try {
-      const outputDir = 'test-records';
-      const fs = require('fs').promises;
-      const path = require('path');
-
-      // Create output directory if it doesn't exist
-      await fs.mkdir(outputDir, { recursive: true });
-
-      // Create a summary of the records
-      const summary = {
-        indexName,
-        totalRecords: records.length,
-        recordTypes: {
-          documentation: records.filter(r => r.type === 'documentation').length,
-          api: records.filter(r => r.type === 'api').length,
-          community: records.filter(r => r.type === 'community').length,
-          tool: records.filter(r => r.type === 'tool').length
-        },
-        products: Array.from(new Set(records.map(r => r.product))),
-        urls: records.map(r => r.url),
-        validationIssues: this.validateRecords(records)
-      };
-
-      // Save records
-      const recordsPath = path.join(outputDir, `${indexName}.json`);
-      await fs.writeFile(
-        recordsPath,
-        JSON.stringify(records, null, 2),
-        'utf8'
-      );
-
-      // Save summary
-      const summaryPath = path.join(outputDir, `${indexName}.summary.json`);
-      await fs.writeFile(
-        summaryPath,
-        JSON.stringify(summary, null, 2),
-        'utf8'
-      );
-
-      console.log(`   💾 Saved ${records.length} records to ${recordsPath}`);
-      console.log(`   📑 Saved summary to ${summaryPath}`);
-    } catch (error) {
-      console.error(`   ⚠️  Failed to save records for index ${indexName}:`, error);
-    }
-  }
-
-  async clearIndex(indexName: string): Promise<void> {
-    try {
-      const index = this.getIndex(indexName);
-      const result = await index.clearObjects();
-      await index.waitTask(result.taskID);
-      console.log(`✅ Index ${indexName} cleared successfully`);
-    } catch (error) {
-      console.error(`Failed to clear index ${indexName}:`, error);
-      throw error;
-    }
-  }
-
-  async clearAllIndices(): Promise<void> {
-    const uniqueIndices = new Set(
-      this.productMappings.flatMap(p => p.productIndices.map(i => i.indexName))
-    );
-
-    for (const indexName of uniqueIndices) {
-      await this.clearIndex(indexName);
-    }
-  }
-} 
+}

@@ -23,9 +23,17 @@ interface ContentAnalysis {
 async function fetchWithRetry(url: string): Promise<Response> {
   return retry(
     async () => {
-      const response = await fetch(url);
+      const response = await Bun.fetch(url, {
+        // Use Bun's optimized HTTP client
+        client: 'bun',
+        // Add reasonable timeout
+        timeout: 5000
+      });
       if (!response.ok) {
-        throw new Error(`Failed to fetch page: ${response.statusText}`);
+        if (response.status === 404) {
+          throw new Error(`Page not found (404): ${url}`);
+        }
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
       return response;
     },
@@ -35,7 +43,7 @@ async function fetchWithRetry(url: string): Promise<Response> {
       shouldRetry: (error: unknown) => {
         if (error instanceof Error) {
           // Don't retry 404s
-          return !error.message.includes('Not Found');
+          return !error.message.includes('404');
         }
         return false;
       },
@@ -43,49 +51,54 @@ async function fetchWithRetry(url: string): Promise<Response> {
   );
 }
 
-export async function fetchPageContent(url: string): Promise<PageContent> {
+export const fetchPageContent = async (url: string): Promise<PageContent> => {
   try {
     const response = await fetchWithRetry(url);
     const html = await response.text();
+    
+    // Parse the HTML using linkedom
     const { document } = parseHTML(html) as { document: Document };
-
-    // Remove script and style elements
-    document.querySelectorAll('script, style').forEach((el: Element) => el.remove());
-
+    
     // Extract metadata
     const metadata: Record<string, string> = {};
-    document.querySelectorAll('meta').forEach((el: Element) => {
-      const name = el.getAttribute('name') || el.getAttribute('property');
-      const content = el.getAttribute('content');
+    document.querySelectorAll('meta').forEach((meta: Element) => {
+      const name = meta.getAttribute('name') || meta.getAttribute('property');
+      const content = meta.getAttribute('content');
       if (name && content) {
         metadata[name] = content;
       }
     });
-
+    
+    // Extract title
+    const title = document.querySelector('title')?.textContent || '';
+    
+    // Extract main content
+    const mainContent = document.querySelector('main')?.textContent || '';
+    
     // Extract headings
     const headings: string[] = [];
-    document.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((el: Element) => {
-      const text = el.textContent?.trim();
-      if (text) headings.push(text);
+    document.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((heading: Element) => {
+      if (heading.textContent) {
+        headings.push(heading.textContent);
+      }
     });
-
-    // Extract main content
-    const mainContent = document.querySelector('main')?.textContent?.trim() || 
-                       document.querySelector('article')?.textContent?.trim() || 
-                       document.body.textContent?.trim() || '';
-
+    
     return {
       url,
-      title: document.title.trim(),
-      headings,
+      title,
       mainContent,
+      headings,
       metadata
     };
   } catch (error) {
-    console.error(`Error fetching content for ${url}:`, error);
+    if (error instanceof Error && error.message.includes('Not Found')) {
+      console.warn(`Skipping ${url}: Page not found (404)`);
+    } else {
+      console.error(`Failed to fetch content from ${url}:`, error);
+    }
     throw error;
   }
-}
+};
 
 export async function analyzeContent(url: string): Promise<ContentAnalysis> {
   try {
@@ -118,50 +131,53 @@ export async function analyzeContent(url: string): Promise<ContentAnalysis> {
   }
 }
 
-export async function analyzeSamplePages(urls: SitemapUrl[]): Promise<void> {
-  // Sample pages from different sections
-  const sampleUrls = new Set<string>();
+export const analyzeSamplePages = async (urls: SitemapUrl[]): Promise<void> => {
+  const verbose = process.argv.includes('--verbose');
+  const queue = new TaskQueue(5);
+  const sampleSize = 5;
   
-  urls.forEach(({ loc }) => {
-    const url = new URL(loc);
-    const pathSegments = url.pathname.split('/').filter(Boolean);
-    if (pathSegments.length > 0) {
-      const pattern = `/${pathSegments[0]}`;
-      if (!Array.from(sampleUrls).some(u => u.includes(pattern))) {
-        sampleUrls.add(loc);
+  // Group URLs by section
+  const sections = new Map<string, SitemapUrl[]>();
+  urls.forEach(url => {
+    const path = new URL(url.loc).pathname;
+    const section = path.split('/')[1] || 'root';
+    if (!sections.has(section)) {
+      sections.set(section, []);
+    }
+    sections.get(section)!.push(url);
+  });
+  
+  if (verbose) {
+    console.log('\nAnalyzing sample pages from each section:');
+    console.log('=======================================\n');
+  }
+  
+  // Analyze a sample from each section
+  for (const [section, sectionUrls] of sections) {
+    // Take a random sample
+    const sample = sectionUrls.sort(() => 0.5 - Math.random()).slice(0, sampleSize);
+    
+    for (const url of sample) {
+      if (verbose) {
+        console.log(`Analyzing ${url.loc}...`);
+      }
+      
+      try {
+        const content = await queue.add(() => fetchPageContent(url.loc));
+        
+        if (verbose) {
+          console.log('Analysis results:');
+          console.log(`- Content length: ${content.mainContent.length} bytes`);
+          console.log(`- Number of headings: ${content.headings.length}`);
+          console.log('- Main content selector: main');
+          console.log('- Available metadata fields:', Object.keys(content.metadata).join(', '));
+          console.log('');
+        }
+      } catch (error) {
+        if (verbose) {
+          console.error(`Failed to analyze ${url.loc}:`, error);
+        }
       }
     }
-  });
-
-  console.log('\nAnalyzing sample pages from each section:');
-  console.log('=======================================');
-
-  // Create a task queue for concurrent processing
-  const queue = new TaskQueue(5);
-  const promises: Promise<void>[] = [];
-
-  for (const url of sampleUrls) {
-    promises.push(
-      queue.add(async () => {
-        console.log(`\nAnalyzing ${url}...`);
-        try {
-          const analysis = await analyzeContent(url);
-          console.log('Analysis results:');
-          console.log('- Content length:', analysis.contentLength, 'bytes');
-          console.log('- Number of headings:', analysis.headingCount);
-          console.log('- Main content selector:', analysis.mainContentSelector);
-          console.log('- Available metadata fields:', analysis.metadataFields.join(', '));
-        } catch (error) {
-          if (error instanceof Error && error.message.includes('Not Found')) {
-            console.warn(`Skipping ${url}: Page not found`);
-          } else {
-            console.error(`Failed to analyze ${url}:`, error);
-          }
-        }
-      })
-    );
   }
-
-  // Wait for all tasks to complete
-  await Promise.all(promises);
-} 
+}; 
