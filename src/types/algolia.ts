@@ -1,39 +1,28 @@
 export interface AlgoliaRecord {
   objectID: string;
   url: string;
+  path: string;
+  indexName: string;
   title: string;
   description: string;
   content: string;
-  contentSegments: {
-    text: string;
-    position: number;
-  }[];
   headings: string[];
-  lastModified: string;
   product: string;
+  type: string;
   topics: string[];
+  lastModified: string;
   hierarchy: {
-    lvl0: string;
+    lvl0?: string;
     lvl1?: string;
     lvl2?: string;
   };
-  type: 'documentation' | 'api' | 'community' | 'tool';
-  metadata: {
-    og?: {
-      title?: string;
-      description?: string;
-      image?: string;
-    };
-    keywords?: string[];
-    products?: string[];
-    embeddedUrls?: string[];
-  };
+  metadata: Record<string, string>;
 }
 
 export interface ProductMapping {
   [path: string]: {
     product: string;
-    type: AlgoliaRecord['type'];
+    type: string;
   };
 }
 
@@ -44,7 +33,10 @@ export interface ProductIndex {
 
 export interface ProductIndexMapping {
   productName: string;
-  productIndices: ProductIndex[];
+  productIndices: {
+    indexName: string;
+    indexPathPrefix: string;
+  }[];
 }
 
 export interface IndexConfig {
@@ -54,9 +46,9 @@ export interface IndexConfig {
 }
 
 export interface IndexingResult {
+  url: string;
   indexName: string;
-  recordCount: number;
-  status: 'success' | 'error';
+  success: boolean;
   error?: Error;
 }
 
@@ -68,12 +60,6 @@ export interface AlgoliaIndexSettings {
   minWordSizefor1Typo: number;
   minWordSizefor2Typos: number;
   queryLanguages: string[];
-  removeStopWords: boolean | string[];
+  removeStopWords: boolean;
   advancedSyntax: boolean;
-  synonyms?: Array<{
-    objectID: string;
-    type: 'synonym' | 'oneWaySynonym' | 'altCorrection1' | 'altCorrection2';
-    input: string;
-    synonyms: string[];
-  }>;
 } 

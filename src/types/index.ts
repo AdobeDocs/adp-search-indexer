@@ -1,3 +1,5 @@
+import type { AlgoliaRecord } from './algolia';
+
 export interface SitemapUrl {
   loc: string;
   lastmod?: string;
@@ -11,7 +13,7 @@ export interface Sitemap {
   };
 }
 
-export type Config = {
+export interface Config {
   sitemap: {
     url: string;
   };
@@ -24,9 +26,41 @@ export type Config = {
     logLevel: string;
     batchSize: number;
     maxConcurrentRequests: number;
-    mode: 'index' | 'console' | 'export';
+    mode: 'none' | 'file' | 'console';
+    verbose: boolean;
     index?: string;
     indexPrefix?: string;
     partial: boolean;
   };
-}; 
+}
+
+export interface ContentSegment {
+  heading: string;
+  content: string;
+  level: number;
+}
+
+export interface PageContent {
+  url: string;
+  title: string;
+  mainContent: string;
+  segments: ContentSegment[];
+  headings: string[];
+  metadata: Record<string, string>;
+}
+
+export interface ProductIndex {
+  indexName: string;
+  indexPathPrefix: string;
+}
+
+export interface ProductMapping {
+  productName: string;
+  productIndices: ProductIndex[];
+}
+
+export interface IndexedContent {
+  indexName: string;
+  productName: string;
+  records: AlgoliaRecord[];
+} 
