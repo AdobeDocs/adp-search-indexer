@@ -1,25 +1,16 @@
 # ADP Search Indexer
 
-A robust sitemap-based content indexer for Adobe Documentation Portal (ADP) that processes and indexes content to Algolia for enhanced search capabilities.
+A specialized search indexer for [developer.adobe.com](https://developer.adobe.com), built by the Adobe Developer Platform (ADP) team. It processes documentation content and indexes it to Algolia to power the developer portal's search functionality.
 
-## Features
+## Overview
 
-- 🚀 Built with Bun and TypeScript for maximum performance
-- 📑 Intelligent content extraction from HTML pages
-- 🔄 Concurrent processing with rate limiting
-- 🗂️ Product-based content categorization
-- 📊 Detailed indexing statistics
-- 🔍 Optimized Algolia record structure
-- 🧪 Test mode with local file output
-- Fetch and parse sitemaps
-- Extract content from HTML pages
-- Map content to appropriate indices based on URL patterns
-- Generate search records with:
-  1. Extract metadata and content
-  2. Clean and segment content
-  3. Save records to `indexed-content` directory
+This tool enhances the developer.adobe.com search experience by:
+- Processing documentation from multiple Adobe products
+- Creating optimized search records for Algolia
+- Maintaining content hierarchy and relationships
+- Ensuring up-to-date search results
 
-## Setup
+## Quick Start
 
 1. Install dependencies:
 ```bash
@@ -29,240 +20,84 @@ bun install
 2. Configure environment:
 ```bash
 cp .env.example .env
+# Edit .env with your configuration
 ```
 
-Edit `.env` with your configuration:
-```env
-# Sitemap Configuration
-SITEMAP_URL=https://main--adp-devsite--adobedocs.aem.page/sitemap.xml
+3. Run the indexer:
+```bash
+# Test mode (output to console)
+bun start --test-console
 
-# Algolia Configuration
-ALGOLIA_APP_ID=your_app_id
-ALGOLIA_API_KEY=your_api_key
-ALGOLIA_INDEX_NAME=your_index_name
-
-# Application Configuration
-LOG_LEVEL=info
-BATCH_SIZE=50
-MAX_CONCURRENT_REQUESTS=5
+# Production mode (index to Algolia)
+bun start --index
 ```
+
+## Key Features
+
+- 🚀 High-performance content processing with Bun and TypeScript
+- 📑 Smart content segmentation for improved search relevance
+- 🔄 Reliable processing with automatic retries
+- 🗂️ Adobe product-based content organization
+- 🔍 Search optimization for developer documentation
+
+## How It Works
+
+1. **Content Processing**
+   - Fetches content from developer.adobe.com sitemap
+   - Segments documentation into searchable chunks
+   - Preserves product and API relationships
+   - Optimizes content for developer search
+
+2. **Search Records**
+   Documentation is processed into search-optimized records:
+   ```typescript
+   interface AlgoliaRecord {
+     objectID: string;     // Unique identifier
+     url: string;         // Documentation URL
+     title: string;      // Content title
+     content: string;    // Processed content
+     product: string;    // Adobe product identifier
+     metadata: {        // Enhanced metadata
+       type: string;   // e.g., 'api', 'guide', 'reference'
+       lastModified: string;
+     };
+     hierarchy: {      // Documentation structure
+       lvl0?: string; // Product level
+       lvl1?: string; // Category level
+       lvl2?: string; // Page level
+     };
+   }
+   ```
 
 ## Development
 
-Run in development mode with watch:
+### Testing
 ```bash
-bun run dev
+# Test specific documentation URLs
+bun start --test-url="https://developer.adobe.com/commerce/docs/..."
+
+# Analyze content structure
+bun start --analyze
 ```
 
-Run normally:
-```bash
-bun run start
-```
+### Error Handling
+- Automatic retries for transient failures
+- Graceful handling of 404s
+- Detailed error reporting
 
-Build for production:
-```bash
-bun run build
-```
-
-## Record Structure
-
-The indexer creates Algolia records with the following structure:
-
-```typescript
-interface AlgoliaRecord {
-  objectID: string;        // Base64 encoded URL
-  url: string;            // Full page URL
-  title: string;          // Page title
-  description: string;    // Meta description
-  content: string;        // Main content
-  headings: string[];     // All headings (h1-h6)
-  lastModified: string;   // Last modification date
-  product: string;        // Product identifier
-  topics: string[];       // Topic tags
-  hierarchy: {           // URL-based hierarchy
-    lvl0: string;       // Top level (e.g., "Commerce")
-    lvl1?: string;      // Second level
-    lvl2?: string;      // Third level
-  };
-  type: 'documentation' | 'api' | 'community' | 'tool';
-  metadata: {           // Additional metadata
-    og: {...};         // OpenGraph metadata
-    keywords: string[];
-    products: string[];
-  };
-}
-```
-
-## Content Processing
-
-The indexer processes content in the following steps:
-
-1. **Sitemap Fetching**
-   - Fetches and parses XML sitemap
-   - Filters out non-content URLs (nav, assets, etc.)
-
-2. **Content Extraction**
-   - Removes scripts and styles
-   - Extracts metadata and OpenGraph tags
-   - Processes main content from semantic HTML
-   - Builds content hierarchy
-
-3. **Product Mapping**
-   - Maps URLs to Adobe products
-   - Determines content type
-   - Applies content categorization
-
-4. **Record Creation**
-   - Creates deterministic objectIDs
-   - Structures content for optimal search
-   - Validates record format
-
-5. **Indexing**
-   - Batches records for efficiency
-   - Applies rate limiting
-   - Updates Algolia index
-
-## Testing
-
-Before indexing to Algolia, you can test the processing:
-
-```bash
-bun run dev
-```
-
-This will:
-1. Analyze URL patterns
-2. Sample content structure
-3. Save records to `test-records.json`
-4. Show indexing statistics
-
-## Algolia Configuration
-
-The indexer configures the following Algolia settings:
-
-### Searchable Attributes
-- title
-- description
-- content
-- headings
-- topics
-- hierarchy
-
-### Faceting Attributes
-- product
-- type
-- topics
-- hierarchy levels
-
-### Ranking
-1. Typo tolerance
-2. Geo location
-3. Word proximity
-4. Filter matches
-5. Attribute importance
-6. Exact matches
-7. Custom ranking (lastModified)
-
-## Test Records
-
-The indexer generates test records for each processed index in the `test-records/` directory. This feature helps with:
-- Debugging index mappings
-- Validating content processing
-- Testing without Algolia credentials
-
-### File Organization
-
-For each index, two files are generated:
-- `{index-name}.json`: Contains all processed records for the index
-- `{index-name}.summary.json`: Contains metadata about the records:
-  - Total record count
-  - Record type distribution
-  - Product distribution
-  - Validation issues (if any)
-
-### Local Development
-
-Test records are automatically saved locally even if Algolia upload fails. This allows you to:
-1. Develop without Algolia credentials
-2. Validate record structure before uploading
-3. Debug content processing issues
-
-The `test-records/` directory is git-ignored to prevent committing large JSON files.
-
-## Contributing
-
-1. Code Style
-   - Use TypeScript features
-   - Follow existing patterns
+### Contributing
+1. Code Quality
+   - Use TypeScript strict mode
    - Add JSDoc comments
    - Run `bun run format`
 
 2. Testing
-   - Test with sample content
-   - Verify record structure
-   - Check error handling
+   - Test with diverse documentation types
+   - Verify content quality
+   - Validate error handling
 
-3. Performance
-   - Monitor memory usage
-   - Optimize batch sizes
-   - Handle rate limits
+## License
 
-4. Documentation
-   - Update README
-   - Document new features
-   - Add code comments
+Copyright Adobe. All rights reserved.
 
-## Future Enhancements
-
-- [ ] Incremental updates
-- [ ] Content validation rules
-- [ ] Advanced error recovery
-- [ ] Performance monitoring
-- [ ] CI/CD integration
-- [ ] Algolia synonyms support
-- [ ] Custom ranking rules
-- [ ] Content deduplication
-
-## Usage
-
-### Basic Usage
-
-```bash
-# Run in test mode (output to console)
-bun start --test-console
-
-# Run in test mode (output to files)
-bun start --test-file
-
-# Run in production mode (upload to Algolia)
-bun start --index
-```
-
-### Test Mode
-
-The indexer can run in test mode to validate content extraction and record generation without uploading to Algolia. This is useful for:
-
-- Development and testing
-- Content validation
-- Record structure verification
-
-Test mode has two options:
-
-1. Console output (`--test-console`): Prints records to console
-2. File output (`--test-file`): Saves records to `indexed-content/` directory
-
-### Output Files
-
-The indexer generates indexed content for each processed index in the `indexed-content/` directory. This feature helps with:
-
-- Validating content extraction
-- Verifying record structure
-- Testing search relevance
-- Debugging indexing issues
-
-Each index gets its own JSON file containing:
-- Index name and product info
-- All records that belong to that index
-- Content and metadata for each record
-
-The `indexed-content/` directory is git-ignored to prevent committing large JSON files.
+This project is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) file for details.
