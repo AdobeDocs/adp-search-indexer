@@ -182,3 +182,7 @@ test-records/
 *.json
 !package.json
 !tsconfig.json
+
+# Cursor
+.cursorrules
+.cursor
