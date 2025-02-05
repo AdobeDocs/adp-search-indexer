@@ -11,6 +11,13 @@ A robust sitemap-based content indexer for Adobe Documentation Portal (ADP) that
 - 📊 Detailed indexing statistics
 - 🔍 Optimized Algolia record structure
 - 🧪 Test mode with local file output
+- Fetch and parse sitemaps
+- Extract content from HTML pages
+- Map content to appropriate indices based on URL patterns
+- Generate search records with:
+  1. Extract metadata and content
+  2. Clean and segment content
+  3. Save records to `indexed-content` directory
 
 ## Setup
 
@@ -215,3 +222,47 @@ The `test-records/` directory is git-ignored to prevent committing large JSON fi
 - [ ] Algolia synonyms support
 - [ ] Custom ranking rules
 - [ ] Content deduplication
+
+## Usage
+
+### Basic Usage
+
+```bash
+# Run in test mode (output to console)
+bun start --test-console
+
+# Run in test mode (output to files)
+bun start --test-file
+
+# Run in production mode (upload to Algolia)
+bun start --index
+```
+
+### Test Mode
+
+The indexer can run in test mode to validate content extraction and record generation without uploading to Algolia. This is useful for:
+
+- Development and testing
+- Content validation
+- Record structure verification
+
+Test mode has two options:
+
+1. Console output (`--test-console`): Prints records to console
+2. File output (`--test-file`): Saves records to `indexed-content/` directory
+
+### Output Files
+
+The indexer generates indexed content for each processed index in the `indexed-content/` directory. This feature helps with:
+
+- Validating content extraction
+- Verifying record structure
+- Testing search relevance
+- Debugging indexing issues
+
+Each index gets its own JSON file containing:
+- Index name and product info
+- All records that belong to that index
+- Content and metadata for each record
+
+The `indexed-content/` directory is git-ignored to prevent committing large JSON files.

@@ -11,7 +11,7 @@ lerna-debug.log*
 .pnpm-debug.log*
 
 # Test output
-test-output/
+indexed-content/
 
 # Caches
 

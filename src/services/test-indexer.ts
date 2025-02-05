@@ -1,4 +1,3 @@
-import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AlgoliaRecord } from '../types/algolia';
 import type { SitemapUrl } from '../types';
@@ -33,7 +32,7 @@ export class TestIndexer {
       products: new Map(),
       types: new Map(),
     };
-    this.outputDir = join(process.cwd(), 'test-output');
+    this.outputDir = join(process.cwd(), 'indexed-content');
   }
 
   async initialize(): Promise<void> {
@@ -46,7 +45,9 @@ export class TestIndexer {
     if (record) {
       this.stats.success++;
       this.stats.products.set(record.product, (this.stats.products.get(record.product) || 0) + 1);
-      this.stats.types.set(record.type, (this.stats.types.get(record.type) || 0) + 1);
+      if (record.type) {
+        this.stats.types.set(record.type, (this.stats.types.get(record.type) || 0) + 1);
+      }
     } else if (error?.message.includes('Not Found')) {
       this.stats.notFound++;
     } else {
@@ -54,21 +55,21 @@ export class TestIndexer {
     }
   }
 
-  async processUrl(url: SitemapUrl): Promise<AlgoliaRecord | null> {
+  async processUrl(url: SitemapUrl): Promise<AlgoliaRecord[]> {
     try {
       console.log(`Processing: ${url.loc}`);
       const content = await fetchPageContent(url.loc);
-      const record = this.algolia.createRecord(content, url);
+      const records = this.algolia.createRecord(content, url);
       
-      if (record) {
-        this.updateStats(record);
-        console.log(`✅ Successfully processed: ${url.loc}`);
+      if (records && records.length > 0) {
+        records.forEach(record => this.updateStats(record));
+        console.log(`✅ Successfully processed: ${url.loc} (${records.length} records)`);
+        return records;
       } else {
-        console.warn(`⚠️ No record created for: ${url.loc}`);
+        console.warn(`⚠️ No records created for: ${url.loc}`);
         this.updateStats(null);
+        return [];
       }
-      
-      return record;
     } catch (error) {
       if (error instanceof Error) {
         this.updateStats(null, error);
@@ -78,7 +79,7 @@ export class TestIndexer {
           console.error(`❌ Failed to process ${url.loc}:`, error);
         }
       }
-      return null;
+      return [];
     }
   }
 
@@ -86,22 +87,20 @@ export class TestIndexer {
     console.log('\n📝 Processing URLs');
     console.log('================');
     
-    const records: AlgoliaRecord[] = [];
+    const allRecords: AlgoliaRecord[] = [];
     const promises: Promise<void>[] = [];
 
     for (const url of urls) {
       promises.push(
         this.queue.add(async () => {
-          const record = await this.processUrl(url);
-          if (record) {
-            records.push(record);
-          }
+          const records = await this.processUrl(url);
+          allRecords.push(...records);
         })
       );
     }
 
     await Promise.all(promises);
-    return records;
+    return allRecords;
   }
 
   private printStats(): void {

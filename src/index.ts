@@ -1,51 +1,70 @@
-import { fetchSitemap, analyzeSitemapPatterns } from './services/sitemap';
+import { fetchSitemap, analyzeSitemap } from './services/sitemap';
 import { analyzeSamplePages } from './services/content';
-import { AlgoliaService } from './services/algolia';
-import { TestIndexer } from './services/test-indexer';
+import { ContentIndexer } from './services/indexer';
 import { config } from './config/config';
+import { ProductMappingService } from './services/product-mapping';
+import { AlgoliaService } from './services/algolia';
+import { parseArgs } from './utils/args';
+
+const PRODUCT_MAPPING_URL = 'https://raw.githubusercontent.com/AdobeDocs/search-indices/refs/heads/main/product-index-map.json';
 
 async function main() {
+  const args = parseArgs();
+  const { baseUrl, sitemapUrl, mode } = args;
+
+  console.log('🔧 Configuration');
+  console.log('==============');
+  console.log(`Mode: ${mode}`);
+  console.log(`Base URL: ${baseUrl}`);
+  console.log(`Sitemap URL: ${sitemapUrl}`);
+  console.log(`Max Concurrent Requests: ${config.app.maxConcurrentRequests}`);
+  console.log(`Batch Size: ${config.app.batchSize}`);
+  console.log(`Log Level: ${config.app.logLevel}`);
+  if (mode === 'index') {
+    console.log(`Algolia Index: ${config.algolia.indexName}`);
+    console.log(`Index Prefix: ${config.app.indexPrefix || 'none'}`);
+    console.log(`Partial Updates: ${config.app.partial ? 'yes' : 'no'}`);
+  }
+
   try {
-    console.log('🌐 Starting indexing process');
-    console.log('========================\n');
+    // Initialize services
+    const productMappingService = new ProductMappingService(args.verbose);
+    await productMappingService.initialize(PRODUCT_MAPPING_URL);
 
-    console.log('🔍 Fetching sitemap...');
-    const urls = await fetchSitemap(config.sitemap.url);
-    
-    console.log('\n📊 Analyzing URL patterns...');
-    analyzeSitemapPatterns(urls);
-
-    console.log('\n🔎 Analyzing sample pages...');
-    await analyzeSamplePages(urls);
-
-    console.log('\n🔧 Initializing services...');
-    // Initialize Algolia service
-    const algolia = new AlgoliaService({
+    const algoliaService = new AlgoliaService({
       appId: config.algolia.appId,
       apiKey: config.algolia.apiKey,
-      indexName: config.algolia.indexName,
-      testMode: config.algolia.testMode,
-    });
+      verbose: args.verbose,
+      testMode: mode === 'console' ? 'console' : mode === 'export' ? 'file' : 'none'
+    }, productMappingService);
+    await algoliaService.initialize();
 
-    // Initialize and run test indexer
-    const testIndexer = new TestIndexer(algolia);
-    await testIndexer.run(urls);
+    // Fetch and analyze sitemap
+    const urls = await fetchSitemap(baseUrl, sitemapUrl);
+    await analyzeSitemap(urls, productMappingService);
 
+    if (mode === 'console') {
+      console.log('\n✅ Analysis complete');
+      return;
+    }
+
+    if (mode === 'export') {
+      console.log('\n📝 Processing content for export...');
+    }
+
+    const indexer = new ContentIndexer(
+      PRODUCT_MAPPING_URL,
+      baseUrl,
+      config.app.maxConcurrentRequests,
+      args.verbose
+    );
+
+    await indexer.run(urls);
   } catch (error) {
-    console.error('\n❌ Error during processing:', error);
+    console.error('❌ Error:', error);
     process.exit(1);
   }
 }
 
-// Start the indexing process
-console.log('🚀 Starting the indexer...\n');
-
-// Log configuration
-console.log('📝 Configuration:');
-console.log('----------------');
-console.log(`• Mode: ${config.app.mode}`);
-console.log(`• Index: ${config.app.index || 'all'}`);
-console.log(`• Index Prefix: ${config.app.indexPrefix || 'none'}`);
-console.log(`• Partial Updates: ${config.app.partial ? 'yes' : 'no'}\n`);
-
+// Remove redundant configuration logging
 main(); 
