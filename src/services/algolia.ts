@@ -1,24 +1,37 @@
-import algoliasearch from 'algoliasearch';
-import type { SearchClient, SearchIndex } from 'algoliasearch';
-import type { AlgoliaRecord, IndexConfig, ProductIndexMapping, IndexingResult, AlgoliaIndexSettings } from '../types/algolia';
-import type { PageContent } from './content';
-import type { SitemapUrl } from '../types';
-import { config } from '../config/config';
-import { writeFile } from 'node:fs/promises';
-import { mkdir } from 'node:fs/promises';
+import algoliasearch, { type SearchClient, type SearchIndex } from 'algoliasearch';
+import type { AlgoliaRecord, ProductIndexMapping, IndexingResult, AlgoliaIndexSettings } from '../types/algolia';
+import type { PageContent, SitemapUrl, ContentSegment } from '../types';
+import { createHash } from 'crypto';
+import { ensureDir } from '../utils/ensure-dir';
 import { join } from 'node:path';
+import { ProductMappingService } from './product-mapping';
+
+const PRODUCT_MAPPING_URL = 'https://raw.githubusercontent.com/AdobeDocs/search-indices/refs/heads/main/product-index-map.json';
+
+export interface AlgoliaServiceConfig {
+  appId: string;
+  apiKey: string;
+  verbose?: boolean;
+  testMode?: 'none' | 'file' | 'console';
+}
+
+interface IndexMatch {
+  indexName: string;
+  productName: string;
+}
 
 export class AlgoliaService {
   private client: SearchClient;
   private indices: Map<string, SearchIndex> = new Map();
-  private productMappings: ProductIndexMapping[] = [];
+  private productMappingService: ProductMappingService;
   private verbose: boolean;
-  private testMode: 'file' | 'console' | 'none';
+  private testMode: 'none' | 'file' | 'console';
 
-  constructor(config: IndexConfig & { testMode: 'file' | 'console' | 'none' }) {
+  constructor(config: AlgoliaServiceConfig, productMappingService: ProductMappingService) {
     this.client = algoliasearch(config.appId, config.apiKey);
-    this.verbose = process.argv.includes('--verbose');
-    this.testMode = config.testMode;
+    this.productMappingService = productMappingService;
+    this.verbose = config.verbose || false;
+    this.testMode = config.testMode || 'none';
   }
 
   private log(message: string, type: 'info' | 'warn' | 'error' = 'info', forceShow = false) {
@@ -36,32 +49,31 @@ export class AlgoliaService {
     }
   }
 
-  private async saveTestData(indexName: string, data: unknown, type: 'settings' | 'records'): Promise<void> {
+  private async saveTestData(indexName: string, data: { settings: AlgoliaIndexSettings; records: AlgoliaRecord[]; productName: string }): Promise<void> {
     if (this.testMode === 'none') return;
 
     if (this.testMode === 'console') {
-      console.log(`\n📝 Test Data for ${indexName} (${type}):`);
+      console.log(`\n📝 Test Data for ${indexName}:`);
       console.log(JSON.stringify(data, null, 2));
       return;
     }
 
     try {
-      const outputDir = 'test-output';
-      await Bun.write(`${outputDir}/.gitkeep`, '');
+      const outputDir = 'indexed-content';
+      await ensureDir(outputDir);
       
-      const fileName = `${indexName}-${type}.json`;
-      const filePath = `${outputDir}/${fileName}`;
+      const fileName = `${indexName}.json`;
+      const filePath = join(outputDir, fileName);
       
-      const file = Bun.file(filePath);
-      await Bun.write(file, JSON.stringify(data, null, 2));
-      this.log(`💾 Saved test ${type} to ${filePath}`, 'info', true);
+      await Bun.write(filePath, JSON.stringify(data, null, 2));
+      this.log(`💾 Saved test data to ${filePath}`, 'info', true);
     } catch (error) {
       this.log(`Failed to save test data: ${error}`, 'error', true);
     }
   }
 
-  private async configureIndexSettings(index: SearchIndex): Promise<void> {
-    const settings: AlgoliaIndexSettings = {
+  private getIndexSettings(): AlgoliaIndexSettings {
+    return {
       searchableAttributes: [
         'title',
         'unordered(headings)',
@@ -102,142 +114,49 @@ export class AlgoliaService {
       removeStopWords: true,
       advancedSyntax: true
     };
+  }
 
-    // Save settings in test mode
-    await this.saveTestData(index.indexName, settings, 'settings');
+  private async configureIndex(index: SearchIndex, records: AlgoliaRecord[], productName: string): Promise<void> {
+    const settings = this.getIndexSettings();
+
+    // Save combined data in test mode
+    if (this.testMode !== 'none') {
+      await this.saveTestData(index.indexName, {
+        settings,
+        records,
+        productName
+      });
+    }
 
     // Only send to Algolia if not in test mode
     if (this.testMode === 'none') {
       try {
         await index.setSettings(settings);
-        this.log('✅ Index settings configured successfully');
+        await index.saveObjects(records);
+        this.log('✅ Index configured and records saved successfully');
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        this.log(`Failed to configure index settings: ${message}`, 'error', true);
+        this.log(`Failed to configure index: ${message}`, 'error', true);
         throw error;
       }
     }
   }
 
   async initialize(): Promise<void> {
-    try {
-      // Fetch product mappings from GitHub
-      const response = await Bun.fetch(
-        'https://raw.githubusercontent.com/AdobeDocs/search-indices/refs/heads/main/product-index-map.json',
-        {
-          client: 'bun',
-          timeout: 10000
-        }
-      );
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch product mappings: ${response.statusText}`);
-      }
-      
-      this.productMappings = await response.json();
-      
-      // Log mapping statistics
-      const totalProducts = this.productMappings.length;
-      const totalIndices = this.productMappings.reduce((sum, p) => sum + p.productIndices.length, 0);
-      
-      this.log('📊 Initialization Summary:', 'info', true);
-      this.log(`   • Products: ${totalProducts}`, 'info', true);
-      this.log(`   • Indices: ${totalIndices}`, 'info', true);
-      if (this.testMode !== 'none') {
-        this.log(`   • Test Mode: ${this.testMode}`, 'info', true);
-      }
-
-      if (this.verbose) {
-        this.log('\nDetailed Index Mappings:');
-        this.productMappings.forEach(p => {
-          p.productIndices.forEach(i => {
-            this.log(`   ${p.productName}: ${i.indexPathPrefix} -> ${i.indexName}`);
-          });
-        });
-      }
-
-      // Configure settings for each index
-      const uniqueIndices = new Set(this.productMappings.flatMap(p => p.productIndices.map(i => i.indexName)));
-      for (const indexName of uniqueIndices) {
-        const index = this.getIndex(indexName);
-        await this.configureIndexSettings(index);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.log('Failed to initialize: ' + message, 'error', true);
-      throw error;
-    }
+    // No initialization needed anymore as we'll configure indices when saving records
   }
 
-  private getIndexForUrl(url: string): { indexName: string; productName: string } | null {
-    const urlPath = new URL(url).pathname;
-    const cleanUrlPath = urlPath.replace(/\/$/, '');
-    
-    // Special case for root URLs
-    if (urlPath === '/' || urlPath === '') {
-      this.log('Using default mapping for root URL');
-      return {
-        indexName: 'developer-site',
-        productName: 'Adobe Developer'
-      };
-    }
-
-    // Find all matching path prefixes
-    interface Match {
-      product: string;
-      index: string;
-      prefix: string;
-      segments: number;
-    }
-
-    const matches: Match[] = [];
-    
-    for (const product of this.productMappings) {
-      for (const index of product.productIndices) {
-        const cleanIndexPath = index.indexPathPrefix.replace(/\/$/, '');
-        
-        // Check if this path prefix matches the URL
-        if (cleanUrlPath === cleanIndexPath || cleanUrlPath.startsWith(cleanIndexPath + '/')) {
-          matches.push({
-            product: product.productName,
-            index: index.indexName,
-            prefix: cleanIndexPath,
-            segments: cleanIndexPath.split('/').filter(Boolean).length
-          });
-        }
-      }
-    }
-
-    // If we have matches, use the most specific one (longest matching path)
-    if (matches.length > 0) {
-      // Sort by number of segments (most specific first)
-      matches.sort((a, b) => b.segments - a.segments);
-      
-      const bestMatch = matches[0];
-      this.log(`Found mapping: ${bestMatch.product} -> ${bestMatch.index}`, 'info');
-      if (this.verbose && matches.length > 1) {
-        this.log('Alternative matches:');
-        matches.slice(1).forEach(m => this.log(`  • ${m.prefix} -> ${m.index}`));
-      }
-      
-      return {
-        indexName: bestMatch.index,
-        productName: bestMatch.product
-      };
-    }
-
-    // Log that no mapping was found
-    this.log(`No index mapping found for URL: ${urlPath}`, 'warn', true);
+  private getIndexForUrl(url: string): IndexMatch | null {
+    const path = new URL(url).pathname;
     if (this.verbose) {
-      this.log('Available path prefixes:');
-      this.productMappings.forEach(product => {
-        product.productIndices.forEach(index => {
-          this.log(`  • ${index.indexPathPrefix} (${product.productName} -> ${index.indexName})`);
-        });
-      });
+      console.log(`🔍 Finding index for path: ${path}`);
     }
     
-    return null;
+    const match = this.productMappingService.findBestMatch(path);
+    if (match && this.verbose) {
+      console.log(`✅ Found matching index: ${match.indexName} for product: ${match.productName}`);
+    }
+    return match;
   }
 
   private getIndex(indexName: string): SearchIndex {
@@ -247,204 +166,251 @@ export class AlgoliaService {
     return this.indices.get(indexName)!;
   }
 
-  private createObjectId(url: string): string {
-    // Create a deterministic objectID from the URL
-    return Buffer.from(url).toString('base64').replace(/[/+=]/g, '_');
-  }
-
-  private extractHierarchy(url: string): AlgoliaRecord['hierarchy'] {
-    const segments = new URL(url).pathname.split('/').filter(Boolean);
-    return {
-      lvl0: segments[0] || '',
-      lvl1: segments[1] || undefined,
-      lvl2: segments[2] || undefined,
-    };
-  }
-
-  private determineType(url: string): AlgoliaRecord['type'] {
-    const path = new URL(url).pathname;
-    if (path.includes('/api/') || path.includes('-api')) return 'api';
-    if (path.includes('/community/') || path.includes('/developer-champion/')) return 'community';
-    if (path.includes('/tools/')) return 'tool';
-    return 'documentation';
-  }
-
-  private extractUrls(content: string): string[] {
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
-    return Array.from(content.matchAll(urlRegex), m => m[1]);
-  }
-
   private cleanContent(content: string): string {
     if (!content) return '';
     
     return content
       // Remove HTML tags and their contents for specific elements
-      .replace(/<(style|script)[^>]*>[\s\S]*?<\/\1>/gi, '')  // Remove style/script tags and their content
-      .replace(/<[^>]*>/g, ' ')                              // Remove remaining HTML tags
+      .replace(/<(style|script|noscript|iframe)[^>]*>[\s\S]*?<\/\1>/gi, '')
+      .replace(/<[^>]*>/g, ' ')
       
       // Remove common formatting artifacts
-      .replace(/\\n\s+/g, ' ')                               // Remove \n followed by spaces
-      .replace(/\s*\n\s*/g, ' ')                             // Remove newlines and surrounding spaces
-      .replace(/\s{2,}/g, ' ')                               // Collapse multiple spaces
-      .replace(/\t/g, ' ')                                   // Replace tabs with space
+      .replace(/\\n\s+/g, ' ')
+      .replace(/\s*\n\s*/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/\t/g, ' ')
       
-      // Remove specific patterns found in the content
-      .replace(/\b\w+[-]?family\s+[^\\n]+/g, '')            // Remove CSS properties
-      .replace(/https?:\/\/[^\s]+/g, '')                     // Remove URLs
-      .replace(/\b(?:var|const|let)\s*\([^)]+\)/g, '')      // Remove JavaScript variable declarations
-      .replace(/\b[A-Za-z]+\([^)]*\)/g, '')                 // Remove function calls
-      .replace(/\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:PST|EST|UTC|GMT)?/gi, '') // Remove time stamps
-      .replace(/(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s*\d{4}/g, '') // Remove dates
+      // Remove specific patterns
+      .replace(/\b\w+[-]?family\s*:\s*[^;]+;?/g, '')
+      .replace(/\b(?:var|const|let)\s*\([^)]+\)/g, '')
+      .replace(/\b[A-Za-z]+\([^)]*\)/g, '')
+      .replace(/data-[^\s>]+/g, '')
+      .replace(/font-family:[^;]+;?/g, '')
+      .replace(/--[a-zA-Z0-9-]+/g, '')
+      .replace(/\(\s*--[^)]+\)/g, '')
       
       // Clean up punctuation and spacing
-      .replace(/\s+([.,!?])/g, '$1')                        // Remove spaces before punctuation
-      .replace(/([.,!?])\s+/g, '$1 ')                       // Ensure single space after punctuation
-      .replace(/\|/g, '. ')                                 // Replace pipes with periods
-      .replace(/\s+/g, ' ')                                 // Final collapse of whitespace
+      .replace(/\s+([.,!?])/g, '$1')
+      .replace(/([.,!?])\s+/g, '$1 ')
+      .replace(/\s+/g, ' ')
       .trim();
   }
 
-  private segmentContent(content: string): { text: string; position: number }[] {
-    if (!content) return [];
-
-    // Split on sentence boundaries followed by space or newline
-    const segments = content
-      .split(/(?<=[.!?])\s+(?=[A-Z])|(?<=\.) (?=[A-Z])/)
-      .map(s => s.trim())
-      .filter(s => s.length > 0);  // Remove empty segments
-    
-    return segments
-      .map((text, index) => ({
-        text: this.cleanContent(text),
-        position: index
-      }))
-      .filter(segment => 
-        segment.text.length > 0 &&
-        !/^[0-9\s]*$/.test(segment.text) &&           // Remove segments that are just numbers
-        !/^[.,!?]\s*$/.test(segment.text) &&          // Remove segments that are just punctuation
-        !/^(?:and|or|but|the)\s/i.test(segment.text)  // Remove segments starting with conjunctions
-      );
+  private shouldSplitContent(content: string): boolean {
+    const SPLIT_THRESHOLD = 7000; // 7KB threshold
+    return content.length > SPLIT_THRESHOLD;
   }
 
-  private extractTopics(content: PageContent): string[] {
-    const topics = new Set<string>();
-    
-    // Extract from keywords
-    if (content.metadata['keywords']) {
-      content.metadata['keywords']
-        .split(',')
-        .map(k => k.trim().toLowerCase())
-        .filter(k => k.length > 0)
-        .forEach(k => topics.add(k));
+  private segmentContent(content: string, headings: string[]): string[] {
+    if (!this.shouldSplitContent(content)) {
+      return [content];
     }
-    
-    // Extract from headings
-    content.headings
-      .map(h => this.cleanContent(h).toLowerCase())
-      .filter(h => h.length > 0 && !h.includes('\n'))  // Skip headings with newlines
-      .forEach(h => topics.add(h));
-    
-    // Extract from content based on common patterns
-    const contentText = this.cleanContent(content.mainContent);
-    
-    // Match technology and feature names
-    const techPatterns = [
-      /(?:using|with|for|in)\s+([A-Z][a-zA-Z0-9\s]+)(?=[\s.,])/g,
-      /(?:API|SDK|Framework|Platform|Tool|Service)s?\s+([A-Z][a-zA-Z0-9\s]+)(?=[\s.,])/g,
-      /([A-Z][a-zA-Z0-9]+(?:\s+[A-Z][a-zA-Z0-9]+)*)\s+(?:integration|plugin|add-on|extension)/g,
-      /(?:Adobe)\s+([A-Z][a-zA-Z0-9\s]+)(?=[\s.,])/g  // Adobe product names
-    ];
 
-    techPatterns.forEach(pattern => {
-      const matches = contentText.matchAll(pattern);
-      for (const match of matches) {
-        const topic = match[1]?.trim().toLowerCase();
-        if (topic && topic.length > 2) {  // Avoid single letters or very short matches
-          topics.add(topic);
+    const segments: string[] = [];
+    const lines = content.split(/\n+/);
+    let currentSegment = '';
+    let currentHeading = '';
+
+    for (const line of lines) {
+      const cleanLine = this.cleanContent(line);
+      
+      // Check if this line is a heading
+      if (headings.includes(cleanLine)) {
+        // Save the current segment if it exists
+        if (currentSegment) {
+          segments.push(currentSegment.trim());
         }
+        currentHeading = cleanLine;
+        currentSegment = currentHeading + '\n';
+        continue;
       }
+
+      // Add line to current segment
+      currentSegment += cleanLine + '\n';
+
+      // Check if we should split the segment
+      if (this.shouldSplitContent(currentSegment)) {
+        segments.push(currentSegment.trim());
+        currentSegment = currentHeading ? currentHeading + '\n' : '';
+      }
+    }
+
+    // Add the last segment if it exists
+    if (currentSegment) {
+      segments.push(currentSegment.trim());
+    }
+
+    return segments.map((segment: string, index: number) => {
+      if (index === 0) return segment;
+      return (currentHeading ? currentHeading + '\n' : '') + segment;
     });
-    
-    return Array.from(topics)
-      .filter(topic => 
-        topic.length > 2 &&                    // Skip very short topics
-        !/^\d+$/.test(topic) &&               // Skip pure numbers
-        !/^[a-z]$/.test(topic) &&             // Skip single letters
-        !topic.includes('\n') &&               // Skip topics with newlines
-        !/^(?:and|or|but|the)\s/i.test(topic) // Skip topics starting with conjunctions
-      );
   }
 
-  createRecord(content: PageContent, sitemapUrl: SitemapUrl): AlgoliaRecord | null {
-    const url = new URL(content.url);
-    const indexInfo = this.getIndexForUrl(url.toString());
+  private normalizeUrl = (url: string): string => {
+    try {
+      const normalized = new URL(url);
+      // Remove trailing slash
+      normalized.pathname = normalized.pathname.replace(/\/+$/, '');
+      // Remove default ports
+      if ((normalized.protocol === 'http:' && normalized.port === '80') ||
+          (normalized.protocol === 'https:' && normalized.port === '443')) {
+        normalized.port = '';
+      }
+      // Remove unnecessary query parameters
+      const cleanParams = new URLSearchParams();
+      normalized.searchParams.forEach((value, key) => {
+        if (!['utm_source', 'utm_medium', 'utm_campaign'].includes(key)) {
+          cleanParams.append(key, value);
+        }
+      });
+      normalized.search = cleanParams.toString();
+      return normalized.toString();
+    } catch (e) {
+      return url; // Return original if URL is invalid
+    }
+  };
+
+  private generateObjectId = (url: string, segment?: string): string => {
+    const input = segment ? `${url}#${segment}` : url;
+    return createHash('md5').update(input).digest('hex');
+  };
+
+  private extractMetadata(metadata: Record<string, unknown>): Record<string, string> {
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(metadata)) {
+      if (typeof value === 'string') {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
+
+  private async processContent(content: PageContent, indexName: string): Promise<AlgoliaRecord[]> {
+    const records: AlgoliaRecord[] = [];
+    
+    // Ensure metadata exists and has required fields
+    if (!content.metadata) {
+      this.log(`Skipping content without metadata`, 'warn');
+      return records;
+    }
+
+    // Create base record from metadata
+    const baseRecord: Partial<AlgoliaRecord> = {
+      topics: Array.isArray(content.metadata.topics) ? content.metadata.topics : [],
+      type: typeof content.metadata.type === 'string' ? content.metadata.type : 'unknown',
+      lastModified: typeof content.metadata.lastModified === 'string' ? content.metadata.lastModified : new Date().toISOString(),
+      ...this.extractMetadata(content.metadata)
+    };
+
+    // Process segments if they exist
+    if (!content.segments || content.segments.length === 0) {
+      this.log(`No segments found in content`, 'warn');
+      return records;
+    }
+
+    // Process each segment
+    for (const segment of content.segments) {
+      if (!segment.id || !segment.content) {
+        this.log(`Skipping invalid segment`, 'warn');
+        continue;
+      }
+
+      const record: AlgoliaRecord = {
+        ...baseRecord as AlgoliaRecord,
+        objectID: segment.id,
+        title: segment.heading || '',
+        content: segment.content,
+        hierarchy: segment.hierarchy || {},
+        product: indexName
+      };
+
+      records.push(record);
+    }
+
+    return records;
+  }
+
+  private createRecordFromSegment = (
+    content: PageContent,
+    segment: ContentSegment,
+    indexInfo: { indexName: string; productName: string },
+    isFirstSegment: boolean
+  ): AlgoliaRecord => {
+    const url = this.normalizeUrl(content.url);
+    const path = new URL(url).pathname;
+    
+    return {
+      objectID: this.generateObjectId(url, segment.heading),
+      url,
+      path,
+      // Only include title in first segment
+      title: isFirstSegment ? content.title : '',
+      content: segment.content,
+      headings: segment.heading,
+      product: indexInfo.productName,
+      indexName: indexInfo.indexName,
+      metadata: this.cleanMetadata(content.metadata),
+      lastModified: content.metadata['lastModified'] || new Date().toISOString().split('T')[0],
+      hierarchy: this.buildHierarchy(content.headings || []),
+      type: content.metadata?.type || 'unknown',
+      topics: content.metadata?.topics || [],
+      ...this.extractMetadata(content.metadata)
+    };
+  };
+
+  createRecord(content: PageContent, sitemapUrl: SitemapUrl): AlgoliaRecord[] {
+    console.log(`\n🔄 Creating records for: ${content.url}`);
+    const url = this.normalizeUrl(content.url);
+    const indexInfo = this.getIndexForUrl(url);
     
     if (!indexInfo) {
-      // Try to create a fallback record for unmapped URLs
-      const urlPath = url.pathname;
-      const segments = urlPath.split('/').filter(Boolean);
-      
-      if (segments.length > 0) {
-        const fallbackProduct = segments[0].charAt(0).toUpperCase() + segments[0].slice(1);
-        const fallbackIndex = `franklin-${segments[0]}`;
-        
-        this.log(`⚠️ Creating fallback record for unmapped URL: ${url}`);
-        this.log(`   - Using fallback product: ${fallbackProduct}`);
-        this.log(`   - Using fallback index: ${fallbackIndex}`);
-        
-        return {
-          objectID: this.createObjectId(url.toString()),
-          url: url.toString(),
-          title: content.title || this.cleanContent(content.headings[0] || ''),
-          description: this.cleanContent(content.metadata['description'] || content.metadata['og:description'] || ''),
-          content: this.cleanContent(content.mainContent),
-          contentSegments: this.segmentContent(content.mainContent),
-          headings: content.headings.map(h => this.cleanContent(h)),
-          lastModified: sitemapUrl.lastmod || new Date().toISOString(),
-          product: fallbackProduct,
-          topics: this.extractTopics(content),
-          hierarchy: this.extractHierarchy(url.toString()),
-          type: this.determineType(url.toString()),
-          metadata: {
-            og: {
-              title: content.metadata['og:title'],
-              description: this.cleanContent(content.metadata['og:description'] || ''),
-              image: content.metadata['og:image'],
-            },
-            keywords: content.metadata['keywords']?.split(',').map(k => k.trim()),
-            products: content.metadata['products']?.split(',').map(p => p.trim()),
-            embeddedUrls: this.extractUrls(content.mainContent)
-          }
-        };
-      }
-      
-      return null;
+      console.warn('❌ Skipping: No index mapping found');
+      return [];
     }
 
-    return {
-      objectID: this.createObjectId(url.toString()),
-      url: url.toString(),
-      title: content.title || this.cleanContent(content.headings[0] || ''),
-      description: this.cleanContent(content.metadata['description'] || content.metadata['og:description'] || ''),
-      content: this.cleanContent(content.mainContent),
-      contentSegments: this.segmentContent(content.mainContent),
-      headings: content.headings.map(h => this.cleanContent(h)),
-      lastModified: sitemapUrl.lastmod || new Date().toISOString(),
-      product: indexInfo.productName,
-      topics: this.extractTopics(content),
-      hierarchy: this.extractHierarchy(url.toString()),
-      type: this.determineType(url.toString()),
-      metadata: {
-        og: {
-          title: content.metadata['og:title'],
-          description: this.cleanContent(content.metadata['og:description'] || ''),
-          image: content.metadata['og:image'],
-        },
-        keywords: content.metadata['keywords']?.split(',').map(k => k.trim()),
-        products: content.metadata['products']?.split(',').map(p => p.trim()),
-        embeddedUrls: this.extractUrls(content.mainContent)
+    const records: AlgoliaRecord[] = [];
+
+    // Create records for each content segment
+    content.segments.forEach((segment, index) => {
+      // Skip empty or very short content
+      if (!segment.content.trim() || segment.content.length < 20) {
+        console.log(`⚠️  Skipping segment: Too short or empty (${segment.content.length} chars)`);
+        return;
       }
-    };
+
+      const record = this.createRecordFromSegment(
+        content,
+        segment,
+        indexInfo,
+        index === 0
+      );
+      records.push(record);
+      console.log(`✅ Created record for segment: ${segment.heading.substring(0, 50)}...`);
+    });
+
+    // If no segments created records, create one record for the whole page
+    if (records.length === 0 && content.mainContent) {
+      console.log('ℹ️  No segments created, using main content');
+      records.push({
+        objectID: this.generateObjectId(url),
+        url,
+        path: new URL(url).pathname,
+        title: content.title,
+        content: content.mainContent,
+        headings: content.headings[0] || '',
+        product: indexInfo.productName,
+        indexName: indexInfo.indexName,
+        metadata: this.cleanMetadata(content.metadata),
+        lastModified: content.metadata['lastModified'] || new Date().toISOString().split('T')[0],
+        hierarchy: this.buildHierarchy(content.headings || []),
+        type: content.metadata?.type || 'unknown',
+        topics: content.metadata?.topics || [],
+        ...this.extractMetadata(content.metadata)
+      });
+    }
+
+    console.log(`📊 Created ${records.length} records for ${url}`);
+    return records;
   }
 
   private validateRecords(records: AlgoliaRecord[]): string[] {
@@ -481,16 +447,16 @@ export class AlgoliaService {
     // First, group records by index
     const recordsByIndex = new Map<string, AlgoliaRecord[]>();
     
-    this.log('\n📊 Processing Records', 'info', true);
-    this.log('==================', 'info', true);
-    this.log(`Total records to process: ${records.length}`, 'info', true);
+    console.log('\n📊 Processing Records', 'info', true);
+    console.log('==================', 'info', true);
+    console.log(`Total records to process: ${records.length}`, 'info', true);
     
     // Group and validate records
     for (const record of records) {
       const indexInfo = this.getIndexForUrl(record.url);
       if (!indexInfo) {
-        this.log(`⚠️  Skipping record: ${record.url}`, 'warn');
-        this.log('   Reason: No matching index found in product mapping', 'warn');
+        console.warn(`⚠️  Skipping record: ${record.url}`);
+        console.warn('   Reason: No matching index found in product mapping');
         stats.skipped++;
         continue;
       }
@@ -500,80 +466,147 @@ export class AlgoliaService {
         recordsByIndex.set(indexName, []);
       }
       recordsByIndex.get(indexName)!.push(record);
+      stats.byIndex.set(indexName, (stats.byIndex.get(indexName) || 0) + 1);
     }
 
     // Process each index
     const results: IndexingResult[] = [];
-    this.log('\n📝 Processing Indices', 'info', true);
-    this.log('===================', 'info', true);
-    
-    for (const [indexName, indexRecords] of recordsByIndex.entries()) {
-      this.log(`\n🔍 Processing index: ${indexName}`, 'info', true);
-      this.log(`   Records to process: ${indexRecords.length}`, 'info', true);
+    console.log('\n📝 Processing Indices');
+    console.log('===================');
+
+    for (const [indexName, indexRecords] of recordsByIndex) {
+      console.log(`\n🔄 Processing index: ${indexName}`);
+      console.log(`   Records to index: ${indexRecords.length}`);
       
       try {
-        // Validate records
-        const validationIssues = this.validateRecords(indexRecords);
-        if (validationIssues.length > 0) {
-          this.log('   ⚠️  Validation issues found:', 'warn');
-          validationIssues.forEach(issue => this.log(`      - ${issue}`, 'warn'));
-        }
-
-        // Save test data
-        await this.saveTestData(indexName, indexRecords, 'records');
-
-        // Only send to Algolia if not in test mode
-        if (this.testMode === 'none') {
-          try {
-            const index = this.getIndex(indexName);
-            const result = await index.saveObjects(indexRecords);
-            await index.waitTask(result.taskIDs[0]);
-            this.log('   ✅ Successfully uploaded to Algolia');
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            this.log(`   ⚠️  Failed to upload to Algolia: ${message}`, 'error');
-            if (this.testMode === 'none') {
-              this.log('   ℹ️  Consider using --test-file or --test-console to debug', 'info');
-            }
-          }
-        }
+        const index = this.getIndex(indexName);
+        await this.configureIndex(index, indexRecords, indexRecords[0]?.product || '');
+        console.log(`✅ Successfully indexed ${indexRecords.length} records to ${indexName}`);
         
-        stats.byIndex.set(indexName, indexRecords.length);
-        stats.successfulIndices++;
         results.push({
           indexName,
           recordCount: indexRecords.length,
           status: 'success'
         });
-        
-        this.log('   ✅ Successfully processed', 'info', true);
+        stats.successfulIndices++;
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.log(`   ❌ Error processing index ${indexName}: ${message}`, 'error', true);
-        stats.errors += indexRecords.length;
-        stats.failedIndices++;
+        console.error(`❌ Failed to index records to ${indexName}:`, error);
         results.push({
           indexName,
           recordCount: 0,
           status: 'error',
-          error: error instanceof Error ? error : new Error(String(error))
+          error: error as Error
         });
+        stats.errors += indexRecords.length;
+        stats.failedIndices++;
       }
     }
 
-    // Print final summary
-    this.log('\n📈 Final Summary', 'info', true);
-    this.log('==============', 'info', true);
-    this.log(`Total records processed: ${stats.total}`, 'info', true);
-    this.log(`Records by index:`, 'info', true);
-    stats.byIndex.forEach((count, index) => {
-      this.log(`   - ${index}: ${count} records`, 'info', true);
-    });
-    this.log(`Skipped records: ${stats.skipped}`, 'info', true);
-    this.log(`Failed records: ${stats.errors}`, 'info', true);
-    this.log(`Successful indices: ${stats.successfulIndices}`, 'info', true);
-    this.log(`Failed indices: ${stats.failedIndices}`, 'info', true);
+    // Print final statistics
+    console.log('\n📈 Final Statistics');
+    console.log('=================');
+    console.log(`Total records processed: ${stats.total}`);
+    console.log(`Successfully indexed: ${stats.total - stats.skipped - stats.errors}`);
+    console.log(`Skipped: ${stats.skipped}`);
+    console.log(`Errors: ${stats.errors}`);
+    console.log(`\nBy Index:`);
+    for (const [index, count] of stats.byIndex) {
+      console.log(`${index}: ${count} records`);
+    }
 
     return results;
+  }
+
+  private buildHierarchy(headings: string[]): { lvl0?: string; lvl1?: string; lvl2?: string } {
+    const hierarchy: { lvl0?: string; lvl1?: string; lvl2?: string } = {};
+    
+    // Map headings to hierarchy levels based on their order
+    headings.slice(0, 3).forEach((heading, index) => {
+      if (heading) {
+        hierarchy[`lvl${index}`] = heading;
+      }
+    });
+
+    return hierarchy;
+  }
+
+  private async processPageContent(page: PageContent): Promise<AlgoliaRecord[]> {
+    const indexInfo = this.getIndexForUrl(page.url);
+    if (!indexInfo) {
+      this.log(`No index found for URL: ${page.url}`, 'warn');
+      return [];
+    }
+
+    const { indexName, productName } = indexInfo;
+    const records: AlgoliaRecord[] = [];
+    const path = new URL(page.url).pathname;
+
+    // Create base record with common fields
+    const baseRecord: Omit<AlgoliaRecord, 'content' | 'headings'> = {
+      objectID: createHash('md5').update(page.url).digest('hex'),
+      url: page.url,
+      path,
+      indexName,
+      title: page.title || '',
+      description: page.description || '',
+      product: productName,
+      type: page.metadata?.type || page.type || 'documentation',
+      topics: page.metadata?.topics || page.topics || [],
+      lastModified: page.metadata?.lastModified || page.lastModified || new Date().toISOString(),
+      hierarchy: this.buildHierarchy(page.headings || []),
+      metadata: {
+        type: page.metadata?.type || page.type || 'documentation',
+        lastModified: page.metadata?.lastModified || page.lastModified || new Date().toISOString(),
+        ...(Object.entries(page.metadata || {}).reduce<Record<string, string>>((acc, [key, value]) => ({
+          ...acc,
+          [key]: String(value)
+        }), {}))
+      }
+    };
+
+    // Process content segments
+    if (page.segments && page.segments.length > 0) {
+      page.segments.forEach((segment: ContentSegment, index: number) => {
+        records.push({
+          ...baseRecord,
+          objectID: `${baseRecord.objectID}_${index}`,
+          content: this.cleanContent(segment.content),
+          headings: segment.heading ? [segment.heading] : []
+        });
+      });
+    } else {
+      // Use main content if available, otherwise use the full content
+      const content = page.mainContent || page.content;
+      const segments = this.segmentContent(content, page.headings || []);
+
+      segments.forEach((segment: string, index: number) => {
+        records.push({
+          ...baseRecord,
+          objectID: `${baseRecord.objectID}_${index}`,
+          content: this.cleanContent(segment),
+          headings: page.headings || []
+        });
+      });
+    }
+
+    return records;
+  }
+
+  private async indexContent(content: PageContent, indexInfo: IndexMatch): Promise<void> {
+    try {
+      const records = await this.processContent(content, indexInfo.indexName);
+      if (records.length === 0) {
+        this.log(`No valid records to index for ${indexInfo.indexName}`, 'warn');
+        return;
+      }
+
+      const index = this.getIndex(indexInfo.indexName);
+      await this.configureIndex(index, records, indexInfo.productName);
+      this.log(`✅ Configured and indexed ${records.length} records to ${indexInfo.indexName}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.log(`Failed to index content: ${message}`, 'error', true);
+      throw error;
+    }
   }
 }
