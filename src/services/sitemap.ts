@@ -1,8 +1,15 @@
-import { XMLParser } from 'fast-xml-parser';
-import type { SitemapUrl } from '../types';
+import type { SitemapUrl } from '../types/index';
 import cheerio from 'cheerio';
 import { ProductMappingService } from './product-mapping';
 
+/**
+ * Fetches the sitemap XML from the given URL and returns an array of sitemap entries.
+ *
+ * @param baseUrl - The base URL of the website.
+ * @param sitemapPath - The relative or absolute path to the sitemap XML.
+ * @returns A promise that resolves to an array of SitemapUrl objects.
+ * @throws An error if the sitemap cannot be fetched.
+ */
 export async function fetchSitemap(baseUrl: string, sitemapPath: string): Promise<SitemapUrl[]> {
   const sitemapUrl = new URL(sitemapPath, baseUrl).toString();
   console.log(`Fetching sitemap from: ${sitemapUrl}`);
@@ -26,20 +33,13 @@ export async function fetchSitemap(baseUrl: string, sitemapPath: string): Promis
   return urls;
 }
 
-function shouldSkipUrl(url: string): boolean {
-  const skipPatterns = [
-    /\/nav\./i,
-    /\/header\./i,
-    /\/footer\./i,
-    /\/search/i,
-    /\/404/i,
-    /\/error/i,
-    /\.(js|css|png|jpg|jpeg|gif|svg|ico|xml|txt|pdf|zip|map)$/i
-  ];
-
-  return skipPatterns.some(pattern => pattern.test(url));
-}
-
+/**
+ * Analyzes sitemap URLs by filtering out excluded URLs and logging summary information.
+ *
+ * @param urls - An array of SitemapUrl objects to analyze.
+ * @param productMappingService - The ProductMappingService instance used to decide on URL exclusions.
+ * @returns A promise that resolves when analysis is complete.
+ */
 export async function analyzeSitemap(urls: SitemapUrl[], productMappingService: ProductMappingService): Promise<void> {
   console.log('\n🔍 Analyzing sitemap URLs...');
   

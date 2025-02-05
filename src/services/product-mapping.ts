@@ -1,4 +1,4 @@
-import type { ProductMapping, ProductIndex, SitemapUrl } from '../types';
+import type { ProductMapping, SitemapUrl } from '../types/index';
 
 const EXCLUDED_PATHS = [
   '/nav/',
@@ -21,40 +21,50 @@ export interface IndexMatch {
   url: string;
 }
 
-interface Pattern {
-  pattern: string;
-  indexName: string;
-  exclude: boolean;
-}
-
-interface Match {
-  indexName: string;
-  excluded: boolean;
-}
-
 interface IndexInfo {
   indexName: string;
   productName: string;
 }
 
+/**
+ * Service responsible for managing product mappings and matching URL paths to their corresponding product indices.
+ * This service loads mapping data from a remote JSON file and provides methods to analyze URLs against product mapping rules.
+ */
 export class ProductMappingService {
   private productMappings: ProductMapping[] = [];
   private verbose: boolean;
   private validMatches: Map<string, IndexMatch> = new Map();
-  private patterns: Pattern[] = [];
 
+  /**
+   * Constructs a new ProductMappingService instance.
+   * @param verbose - Optional flag to enable verbose logging.
+   */
   constructor(verbose = false) {
     this.verbose = verbose;
   }
 
+  /**
+   * Retrieves the list of product mappings.
+   * @returns The array of ProductMapping objects.
+   */
   getProductMappings(): ProductMapping[] {
     return this.productMappings;
   }
 
+  /**
+   * Retrieves the map of valid URL-to-product matches.
+   * @returns A Map where the key is the URL path and the value is the IndexMatch object.
+   */
   getValidMatches(): Map<string, IndexMatch> {
     return this.validMatches;
   }
 
+  /**
+   * Determines if a given URL path should be excluded from mapping.
+   *
+   * @param path - The URL path to check.
+   * @returns True if the path should be excluded, false otherwise.
+   */
   shouldExcludePath(path: string): boolean {
     // First normalize the path
     const normalizedPath = path.replace(/\/$/, '');
@@ -75,6 +85,13 @@ export class ProductMappingService {
     });
   }
 
+  /**
+   * Initializes the product mappings by fetching data from the provided URL.
+   *
+   * @param mappingUrl - The URL from which to fetch the product mappings JSON.
+   * @returns A Promise that resolves when the mappings are successfully loaded.
+   * @throws An error if the fetch or the processing fails.
+   */
   async initialize(mappingUrl: string): Promise<void> {
     try {
       const response = await fetch(mappingUrl);
@@ -103,6 +120,12 @@ export class ProductMappingService {
     return this.productMappings.reduce((sum, product) => sum + product.productIndices.length, 0);
   }
 
+  /**
+   * Finds the best matching product index for a given URL path.
+   *
+   * @param urlPath - The URL path to match.
+   * @returns The best matching IndexMatch if a match is found, or null if no match is found or the path is excluded.
+   */
   findBestMatch(urlPath: string): IndexMatch | null {
     // First check if we already have a match for this path
     if (this.validMatches.has(urlPath)) {
@@ -187,6 +210,11 @@ export class ProductMappingService {
     return null;
   }
 
+  /**
+   * Analyzes the sitemap URLs to determine product mapping matches and logs summary information.
+   *
+   * @param urls - An array of SitemapUrl objects to analyze.
+   */
   analyzeUrlMatches(urls: SitemapUrl[]): void {
     const matchStats = new Map<string, {
       total: number;
@@ -301,40 +329,23 @@ export class ProductMappingService {
     }
   }
 
+  /**
+   * Retrieves a set of unique index names based on the product mappings.
+   *
+   * @returns A Set of unique index names.
+   */
   getUniqueIndices(): Set<string> {
     return new Set(
       this.productMappings.flatMap(p => p.productIndices.map(i => i.indexName))
     );
   }
 
-  private findMatches(url: string): Match[] {
-    try {
-      const urlPath = new URL(url).pathname;
-      
-      // First check if path should be excluded
-      if (this.shouldExcludePath(urlPath)) {
-        return [{
-          indexName: 'excluded',
-          excluded: true
-        }];
-      }
-
-      const matches: Match[] = [];
-      for (const pattern of this.patterns) {
-        if (url.includes(pattern.pattern)) {
-          matches.push({
-            indexName: pattern.indexName,
-            excluded: pattern.exclude
-          });
-        }
-      }
-      return matches;
-    } catch (error) {
-      console.warn(`Invalid URL: ${url}`);
-      return [];
-    }
-  }
-
+  /**
+   * Determines the product index for a given URL by evaluating mapping rules.
+   *
+   * @param url - The URL to evaluate.
+   * @returns The IndexInfo if a valid mapping is found, or null otherwise.
+   */
   getIndexForUrl(url: string): IndexInfo | null {
     try {
       const urlPath = new URL(url).pathname;

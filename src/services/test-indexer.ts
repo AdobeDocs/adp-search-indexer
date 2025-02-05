@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import type { AlgoliaRecord } from '../types/algolia';
-import type { SitemapUrl } from '../types';
+import type { SitemapUrl } from '../types/index';
 import { fetchPageContent } from './content';
 import { AlgoliaService } from './algolia';
 import { TaskQueue } from '../utils/queue';
@@ -59,7 +59,7 @@ export class TestIndexer {
     try {
       console.log(`Processing: ${url.loc}`);
       const content = await fetchPageContent(url.loc);
-      const records = this.algolia.createRecord(content, url);
+      const records = this.algolia.createRecord(content);
       
       if (records && records.length > 0) {
         records.forEach(record => this.updateStats(record));

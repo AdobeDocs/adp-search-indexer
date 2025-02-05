@@ -1,4 +1,4 @@
-import type { SitemapUrl } from '../types';
+import type { SitemapUrl } from '../types/index';
 import type { AlgoliaRecord } from '../types/algolia';
 import { ProductMappingService } from './product-mapping';
 import { fetchPageContent } from './content';
@@ -20,19 +20,6 @@ interface IndexedContent {
   indexName: string;
   productName: string;
   records: AlgoliaRecord[];
-}
-
-interface SkipError {
-  type: 'skip';
-  reason: string;
-  message: string;
-}
-
-function isSkipError(error: unknown): error is SkipError {
-  return error !== null && 
-         typeof error === 'object' && 
-         'type' in error && 
-         error.type === 'skip';
 }
 
 interface IndexInfo {
@@ -232,14 +219,19 @@ export class ContentIndexer {
         product: indexInfo.productName,
         type: content.metadata?.type || 'documentation',
         topics: content.metadata?.topics || [],
-        lastModified: content.lastModified || new Date().toISOString(),
+        lastModified: content.metadata?.lastModified || new Date().toISOString(),
         hierarchy: this.buildHierarchy(content.url),
         metadata: {
           keywords: (content.metadata?.keywords || []).join(','),
           products: indexInfo.productName,
-          og_title: content.metadata?.og?.title || '',
-          og_description: content.metadata?.og?.description || '',
-          og_image: content.metadata?.og?.image || ''
+          og_title: content.metadata?.og_title || '',
+          og_description: content.metadata?.og_description || '',
+          og_image: content.metadata?.og_image || ''
+        },
+        structure: content.structure || {
+          hasHeroSection: false,
+          hasDiscoverBlocks: false,
+          contentTypes: []
         }
       };
 

@@ -1,25 +1,10 @@
 import cheerio from 'cheerio';
 import type { Element } from 'domhandler';
-import type { SitemapUrl } from '../types';
+import type { SitemapUrl, PageContent, ContentSegment } from '../types/index';
 import { TaskQueue } from '../utils/queue';
 import { retry } from '../utils/retry';
 
 type CheerioRoot = ReturnType<typeof cheerio.load>;
-
-export interface ContentSegment {
-  heading: string;
-  content: string;
-  level: number;
-}
-
-export interface PageContent {
-  url: string;
-  title: string;
-  mainContent: string;
-  segments: ContentSegment[];
-  headings: string[];
-  metadata: Record<string, string>;
-}
 
 export interface ContentAnalysis {
   url: string;
@@ -71,10 +56,36 @@ async function fetchWithRetry(url: string): Promise<Response> {
   }
 }
 
-// Enhanced content cleaning utilities
+/**
+ * Cleans and normalizes HTML content by removing unwanted elements and formatting.
+ * 
+ * @param html - The raw HTML content to clean
+ * @returns Cleaned and normalized text content
+ */
 const cleanHtml = (html: string): string => {
   if (!html) return '';
   
+  // First remove template data blocks and code blocks that aren't content
+  html = html.replace(/<pre><code>data-slots=[^<]*<\/code><\/pre>/g, '')
+             .replace(/<pre><code>[^<]*<\/code><\/pre>/g, '');
+             
+  // Remove video embeds and iframes
+  html = html.replace(/<iframe[^>]*>[\s\S]*?<\/iframe>/g, '')
+             .replace(/<div[^>]*class="[^"]*(?:video|youtube|vimeo|embed|media-embed|video-container|player)[^"]*"[^>]*>[\s\S]*?<\/div>/g, '')
+             .replace(/<div[^>]*data-[^>]*(?:video|youtube|vimeo|embed|media)[^>]*>[\s\S]*?<\/div>/g, '')
+             .replace(/<video[^>]*>[\s\S]*?<\/video>/g, '')
+             .replace(/<audio[^>]*>[\s\S]*?<\/audio>/g, '');
+  
+  // Decode HTML entities
+  html = html.replace(/&amp;/g, '&')
+             .replace(/&lt;/g, '<')
+             .replace(/&gt;/g, '>')
+             .replace(/&quot;/g, '"')
+             .replace(/&#x26;/g, '&')
+             .replace(/&#x3C;/g, '<')
+             .replace(/&#x3E;/g, '>')
+             .replace(/&#x22;/g, '"');
+             
   return html
     // Remove complete script, style, and other unwanted tags with their content
     .replace(/<(script|style|noscript|iframe|svg|nav|header|footer|button|form|aside|dialog|meta)[^>]*>[\s\S]*?<\/\1>/gi, '')
@@ -82,24 +93,36 @@ const cleanHtml = (html: string): string => {
     // Remove all data attributes and their content more aggressively
     .replace(/\s*data-[^\s>]*(?:="[^"]*")?/g, '')
     
-    // Remove specific class patterns that indicate UI elements
-    .replace(/<[^>]*class="[^"]*(?:button|nav|menu|sidebar|footer|header|toolbar|dialog|modal|popup|overlay|search|pagination|breadcrumb)[^"]*"[^>]*>[\s\S]*?<\/[^>]*>/gi, '')
+    // Remove specific class patterns that indicate UI elements, but preserve their content
+    .replace(/<[^>]*class="[^"]*(?:button|nav|menu|sidebar|footer|header|toolbar|dialog|modal|popup|overlay|search|pagination|breadcrumb)[^"]*"[^>]*>([\s\S]*?)<\/[^>]*>/gi, '$1')
     
     // Remove HTML comments
     .replace(/<!--[\s\S]*?-->/g, '')
     
-    // Remove links that are likely navigation or UI elements
-    .replace(/<a[^>]*>(?:Previous|Next|Back|Home|Top|Menu|Close|Cancel|Submit|Skip|More|Learn More|Read More|Get Started)[^<]*<\/a>/gi, '')
+    // Preserve strong tags for emphasis
+    .replace(/<strong([^>]*)>(.*?)<\/strong>/gi, '**$2**')
     
-    // Remove all attributes except for specific allowed ones (href for links, src for images)
-    .replace(/<([a-z0-9]+)(?:[^>]*?)(?:\s(?:href|src|alt|title)="[^"]*")*[^>]*>/gi, '<$1>')
+    // Convert paragraphs and divs to line breaks for better readability
+    .replace(/<\/(p|div|section|article)>\s*<\1[^>]*>/gi, '\n\n')
+    .replace(/<(p|div|section|article)[^>]*>/gi, '')
+    .replace(/<\/(p|div|section|article)>/gi, '\n\n')
+    
+    // Remove links that are likely navigation or UI elements but keep meaningful ones
+    .replace(/<a[^>]*>(?:Previous|Next|Back|Home|Top|Menu|Close|Cancel|Submit|Skip)[^<]*<\/a>/gi, '')
+    
+    // Remove URLs and links but keep their text content
+    .replace(/<a[^>]*href="[^"]*"[^>]*>(.*?)<\/a>/gi, '$1')
+    .replace(/https?:\/\/[^\s<>)"]+/g, '')
+    .replace(/www\.[^\s<>)"]+/g, '')
+    .replace(/\b(?:youtube\.com|youtu\.be|vimeo\.com|twitter\.com|facebook\.com|linkedin\.com|devpost\.com)\/?[^\s<>)"]*\b/g, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Remove markdown links
+    .replace(/\b(?:check it out on|view on|watch on|available on|visit|go to)\s+(?:devpost|youtube|github|npm)\b/gi, '') // Remove common URL references
     
     // Clean up remaining HTML tags while preserving meaningful whitespace
     .replace(/<[^>]*>/g, ' ')
     
     // Remove common UI text patterns and instructions
     .replace(/\b(?:click|tap|swipe|drag|drop|scroll|press|type|enter|submit)\b\s+(?:here|to|for|the|button)\b/gi, '')
-    .replace(/\b(?:learn|read|view|see|click|tap|get)\s+(?:more|started|docs|documentation|guide)\b/gi, '')
     .replace(/\b(?:loading|please wait|processing)\b/gi, '')
     
     // Remove CSS-related content
@@ -129,6 +152,9 @@ const cleanHtml = (html: string): string => {
     .replace(/(?:\s*-\s*)+/g, '-')
     .replace(/\b(\w+)(?:\s*-\s*\1)+\b/gi, '$1')
     .replace(/\b(\w+)(?:\s+\1)+\b/gi, '$1')
+    
+    // Normalize multiple newlines to maximum of two
+    .replace(/\n{3,}/g, '\n\n')
     
     .trim();
 };
@@ -193,7 +219,14 @@ const removeDuplicateContent = (content: string): string => {
     .trim();
 };
 
-// Helper function to calculate Levenshtein distance for better duplicate detection
+/**
+ * Calculates the Levenshtein distance between two strings.
+ * Used for detecting similar or duplicate content.
+ * 
+ * @param str1 - First string to compare
+ * @param str2 - Second string to compare
+ * @returns The Levenshtein distance between the strings
+ */
 function levenshteinDistance(str1: string, str2: string): number {
   const m = str1.length;
   const n = str2.length;
@@ -219,13 +252,25 @@ function levenshteinDistance(str1: string, str2: string): number {
   return dp[m][n];
 }
 
+/**
+ * Normalizes a heading by removing leading numbers and extra whitespace.
+ * 
+ * @param heading - The heading text to normalize
+ * @returns The normalized heading text
+ */
 const normalizeHeading = (heading: string): string => {
   return heading
     .replace(/\s+/g, ' ')
-    .replace(/^[0-9.]+\s+/, '') // Remove leading numbers/periods
+    .replace(/^[0-9.]+\s+/, '')
     .trim();
 };
 
+/**
+ * Extracts metadata from meta tags in the HTML document.
+ * 
+ * @param $ - Cheerio instance containing the parsed HTML
+ * @returns Object containing extracted metadata key-value pairs
+ */
 const extractMetadata = ($: CheerioRoot): Record<string, string> => {
   const metadata: Record<string, string> = {};
   
@@ -236,35 +281,63 @@ const extractMetadata = ($: CheerioRoot): Record<string, string> => {
     const content = $el.attr('content');
     
     if (name && content) {
-      // Skip social media tags
-      if (!name.startsWith('og:') && !name.startsWith('twitter:')) {
-        metadata[name] = content.trim();
-      }
+      metadata[name] = content.trim();
     }
   });
+
+  // Add important metadata fields with fallbacks
+  metadata['source'] = metadata['source'] || '';
+  metadata['pathprefix'] = metadata['pathprefix'] || '';
+  metadata['githubblobpath'] = metadata['githubblobpath'] || '';
+  metadata['template'] = metadata['template'] || 'documentation';
+  
+  // Extract Open Graph metadata
+  metadata['og_title'] = metadata['og:title'] || '';
+  metadata['og_description'] = metadata['og:description'] || '';
+  metadata['og_image'] = metadata['og:image'] || '';
   
   // Add last modified date if available
-  const lastModified = $('meta[name="last-modified"]').attr('content');
+  const lastModified = metadata['last-modified'] || $('meta[name="last-modified"]').attr('content');
   if (lastModified) {
     metadata['lastModified'] = lastModified;
   } else {
     // Use current date as fallback
-    metadata['lastModified'] = new Date().toISOString().split('T')[0];
+    metadata['lastModified'] = new Date().toISOString();
   }
   
   return metadata;
 };
 
-const extractSegments = ($: CheerioRoot, $element: ReturnType<typeof $>): ContentSegment[] => {
+/**
+ * Extracts content segments from an HTML element, organizing content by headings.
+ * Removes navigation and UI elements, and cleans the content.
+ * 
+ * @param $ - Cheerio instance
+ * @param $root - Root cheerio element to extract segments from
+ * @returns Array of ContentSegment objects
+ */
+const extractSegments = ($: CheerioRoot, $root: ReturnType<CheerioRoot>): ContentSegment[] => {
   const segments: ContentSegment[] = [];
   let currentSegment: ContentSegment | null = null;
   let contentBuffer: string[] = [];
-  
+
+  function createSegment(heading: string, content: string, level: number): ContentSegment {
+    return { heading, content, level };
+  }
+
+  function isContentSegment(segment: unknown): segment is ContentSegment {
+    if (!segment || typeof segment !== 'object') return false;
+    const s = segment as Record<string, unknown>;
+    return typeof s['heading'] === 'string' &&
+           typeof s['content'] === 'string' &&
+           typeof s['level'] === 'number';
+  }
+
   // Remove unwanted elements before processing
-  $element.find('nav, header, footer, .navigation, .menu, .sidebar, [role="navigation"], button, .button, .toolbar, .dialog, [aria-hidden="true"], aside, [role="complementary"], .search-container, .breadcrumb, .pagination, [data-block-name="footer"], [data-block-name="header"]');
+  $root.find('nav, header, footer, .navigation, .menu, .sidebar, [role="navigation"], button, .button, .toolbar, .dialog, [aria-hidden="true"], aside, [role="complementary"], .search-container, .breadcrumb, .pagination, [data-block-name="footer"], [data-block-name="header"]').remove();
   
   // Process all elements in order
-  $element.find('*').each(function(this: Element) {
+  $root.find('*').each(function(this: Element) {
     const $node = $(this);
     const tagName = this.name?.toLowerCase();
     
@@ -283,14 +356,14 @@ const extractSegments = ($: CheerioRoot, $element: ReturnType<typeof $>): Conten
 
     if (tagName && /^h[1-6]$/.test(tagName)) {
       // Save previous segment if exists
-      if (currentSegment && contentBuffer.length > 0) {
+      if (currentSegment && isContentSegment(currentSegment)) {
         const content = removeDuplicateContent(cleanHtml(contentBuffer.join('\n')));
-        if (content && content.length >= 20) { // Only keep segments with meaningful content
-          segments.push({
-            heading: currentSegment.heading,
+        if (content && content.length >= 20) {
+          segments.push(createSegment(
+            currentSegment['heading'],
             content,
-            level: currentSegment.level
-          } as ContentSegment);
+            currentSegment['level']
+          ));
         }
       }
       
@@ -299,24 +372,20 @@ const extractSegments = ($: CheerioRoot, $element: ReturnType<typeof $>): Conten
       const heading = normalizeHeading($node.text());
       
       // Check if this heading is already used or is navigation-like
-      const isDuplicateHeading = segments.some(s => 
-        s.heading === heading && Math.abs(s.level - level) <= 1
-      );
+      const isDuplicateHeading = segments.some(segment => segment.heading === heading);
       const isNavigationHeading = /^(?:navigation|menu|links|related|see also|quick links|resources|tools|more|get started)\b/i.test(heading);
       
       if (!isDuplicateHeading && !isNavigationHeading && heading) {
-        currentSegment = {
-          heading,
-          content: '',
-          level
-        };
+        currentSegment = createSegment(heading, '', level);
         contentBuffer = [];
+      } else {
+        currentSegment = null;
       }
-    } else if (currentSegment) {
+    } else if (currentSegment && isContentSegment(currentSegment)) {
       // Skip unwanted elements and their content
       if (!/^(?:script|style|noscript|iframe|svg|nav|button|form|aside|dialog)$/.test(tagName || '')) {
         const text = cleanHtml($node.text());
-        if (text && text.length >= 10) { // Only keep meaningful content
+        if (text && text.length >= 10) {
           contentBuffer.push(text);
         }
       }
@@ -324,14 +393,14 @@ const extractSegments = ($: CheerioRoot, $element: ReturnType<typeof $>): Conten
   });
   
   // Save the last segment
-  if (currentSegment && contentBuffer.length > 0) {
+  if (currentSegment && isContentSegment(currentSegment) && contentBuffer.length > 0) {
     const content = removeDuplicateContent(cleanHtml(contentBuffer.join('\n')));
     if (content && content.length >= 20) {
-      segments.push({
-        heading: currentSegment.heading,
+      segments.push(createSegment(
+        currentSegment['heading'],
         content,
-        level: currentSegment.level
-      } as ContentSegment);
+        currentSegment['level']
+      ));
     }
   }
 
@@ -354,7 +423,14 @@ export async function fetchPageContent(url: string): Promise<PageContent> {
                  $('#content').length ? $('#content') :
                  $('body');
 
-    // Extract headings
+    // Extract title with better fallbacks
+    const title = $('title').text().trim() || 
+                 $('h1').first().text().trim() || 
+                 metadata['og:title'] || 
+                 metadata['og_title'] || 
+                 '';
+
+    // Extract headings, filtering out empty ones
     const headings = $main.find('h1, h2, h3, h4, h5, h6')
       .map((_, el) => normalizeHeading($(el).text()))
       .get()
@@ -363,10 +439,24 @@ export async function fetchPageContent(url: string): Promise<PageContent> {
     // Extract segments
     const segments = extractSegments($, $main);
 
-    // Get main content
-    const mainContent = cleanHtml($main.text());
+    // Get main content with template data removed
+    const mainContent = cleanHtml($main.html() || '');
 
-    if (segments.length === 0 && (!mainContent || mainContent.length < 100)) {
+    // Get description with better fallbacks
+    const description = metadata['description'] || 
+                       metadata['og:description'] ||
+                       metadata['og_description'] ||
+                       cleanHtml($main.find('p').first().text()) || 
+                       mainContent.slice(0, 200) || '';
+
+    // Track content structure
+    const structure = {
+      hasHeroSection: $main.find('.herosimple').length > 0,
+      hasDiscoverBlocks: $main.find('.discoverblock').length > 0,
+      contentTypes: Array.from(new Set($main.find('[class]').map((_, el) => $(el).attr('class')).get())),
+    };
+
+    if (segments.length === 0 && mainContent.length < 100) {
       // Only warn about no content if it's not a navigation page
       if (!url.endsWith('/nav')) {
         console.warn(`⚠️  No meaningful content found for ${url}`);
@@ -375,18 +465,17 @@ export async function fetchPageContent(url: string): Promise<PageContent> {
 
     return {
       url,
-      title: $('title').text().trim() || metadata['title'] || '',
+      title,
       mainContent,
+      content: mainContent || '', // Ensure content is always defined
+      description,
       segments,
       headings,
-      metadata
+      metadata,
+      structure
     };
   } catch (error) {
-    // Don't log 404 errors, just throw them
-    if (error && typeof error === 'object' && 'type' in error && error.type === 'skip') {
-      throw error;
-    }
-    console.error(`❌ Error fetching content for ${url}:`, error);
+    console.error(`Error fetching content for ${url}:`, error);
     throw error;
   }
 }
@@ -459,10 +548,10 @@ export const analyzeSamplePages = async (urls: SitemapUrl[]): Promise<void> => {
         
         if (verbose) {
           console.log('Analysis results:');
-          console.log(`- Content length: ${content.mainContent.length} bytes`);
+          console.log(`- Content length: ${content.mainContent?.length || 0} bytes`);
           console.log(`- Number of headings: ${content.headings.length}`);
           console.log('- Main content selector: main');
-          console.log('- Available metadata fields:', Object.keys(content.metadata).join(', '));
+          console.log('- Available metadata fields:', Object.keys(content.metadata || {}).join(', '));
           console.log('');
         }
       } catch (error) {
