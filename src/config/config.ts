@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Config } from '../types';
+import type { Config } from '../types/index';
 
 const configSchema = z.object({
   SITEMAP_URL: z.string().startsWith('/'),
@@ -28,6 +28,14 @@ const configSchema = z.object({
   return config;
 });
 
+/**
+ * Validates and parses environment configuration.
+ *
+ * This function extracts configuration values from process.argv and process.env, applies default values, and validates them
+ * using the defined zod schema. If validation fails, it logs detailed error messages and exits the process.
+ *
+ * @returns The validated environment configuration.
+ */
 const validateEnv = () => {
   // Get mode from command line arguments if provided
   const mode = process.argv.includes('--index') 
@@ -76,6 +84,29 @@ const validateEnv = () => {
 
 validateEnv();
 
+/**
+ * Application configuration object.
+ *
+ * This object aggregates the validated environment settings to configure the application.
+ *
+ * @property {Object} sitemap - Contains sitemap-related settings.
+ * @property {string} sitemap.url - The URL for the sitemap. Defaults to 'https://example.com/sitemap.xml' if not provided.
+ *
+ * @property {Object} algolia - Contains Algolia related credentials and settings.
+ * @property {string} algolia.appId - The Algolia application ID.
+ * @property {string} algolia.apiKey - The Algolia API key.
+ * @property {string} algolia.indexName - The Algolia index name.
+ *
+ * @property {Object} app - Contains application specific settings.
+ * @property {string} app.logLevel - The logging level ('debug', 'info', 'warn', 'error').
+ * @property {number} app.batchSize - Controls the batch size for processing.
+ * @property {number} app.maxConcurrentRequests - Maximum number of concurrent requests.
+ * @property {string} app.mode - Operational mode ('none', 'file', 'console').
+ * @property {boolean} app.verbose - Flag to enable verbose logging.
+ * @property {string|undefined} app.index - Optional index value from CLI or environment.
+ * @property {string|undefined} app.indexPrefix - Optional prefix for index.
+ * @property {boolean} app.partial - Indicates if partial indexing is enabled.
+ */
 export const config: Config = {
   sitemap: {
     url: process.env['SITEMAP_URL'] || 'https://example.com/sitemap.xml'

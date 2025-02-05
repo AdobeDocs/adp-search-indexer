@@ -1,5 +1,4 @@
 import { fetchSitemap, analyzeSitemap } from './services/sitemap';
-import { analyzeSamplePages } from './services/content';
 import { ContentIndexer } from './services/indexer';
 import { config } from './config/config';
 import { ProductMappingService } from './services/product-mapping';
@@ -8,6 +7,15 @@ import { parseArgs } from './utils/args';
 
 const PRODUCT_MAPPING_URL = 'https://raw.githubusercontent.com/AdobeDocs/search-indices/refs/heads/main/product-index-map.json';
 
+/**
+ * Main function that orchestrates the application startup.
+ *
+ * This function parses command-line arguments, logs configuration settings, and initializes the core services
+ * (including product mapping, Algolia integration, sitemap fetching, and content indexing).
+ * It handles different execution flows based on the selected mode (index, export, or console) and manages errors appropriately.
+ *
+ * @returns {Promise<void>} A promise that resolves when the application has completed its processing.
+ */
 async function main() {
   const args = parseArgs();
   const { baseUrl, sitemapUrl, mode } = args;
