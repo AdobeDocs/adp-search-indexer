@@ -1,5 +1,4 @@
 import { mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
 
 /**
  * Ensures that a directory exists, creating it if necessary.
@@ -12,8 +11,7 @@ export async function ensureDir(dir: string): Promise<void> {
   try {
     await mkdir(dir, { recursive: true });
   } catch (error) {
-    // If directory already exists, that's fine
-    if ((error as { code?: string }).code !== 'EEXIST') {
+    if (error instanceof Error && 'code' in error && error.code !== 'EEXIST') {
       throw error;
     }
   }
