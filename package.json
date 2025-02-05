@@ -10,17 +10,21 @@
     "format": "bun x prettier --write .",
     "test": "bun test",
     "test:watch": "bun test --watch",
-    "cleanup": "rm -rf test-output"
+    "cleanup": "rm -rf indexed-content"
   },
   "dependencies": {
     "@algolia/client-search": "^4.22.1",
+    "@mozilla/readability": "^0.5.0",
+    "@types/minimist": "^1.2.5",
     "algoliasearch": "^4.22.1",
-    "linkedom": "^0.16.8",
+    "cheerio": "1.0.0-rc.12",
     "fast-xml-parser": "^4.3.2",
+    "minimist": "^1.2.8",
     "zod": "^3.22.4"
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/cheerio": "^0.22.35",
     "prettier": "^3.2.5",
     "typescript": "^5.3.3"
   },
