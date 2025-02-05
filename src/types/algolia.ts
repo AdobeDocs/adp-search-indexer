@@ -49,6 +49,14 @@ export interface AlgoliaRecord {
     hasDiscoverBlocks: boolean;
     contentTypes: string[];
   };
+  /** Indicates if this is a parent record or a segment */
+  isParent?: boolean;
+  /** Reference to the parent record's objectID if this is a segment */
+  parentObjectID?: string;
+  /** The heading/title of this segment if it's a segment record */
+  sectionTitle?: string;
+  /** The level of this section in the document hierarchy (1-6 for h1-h6) */
+  sectionLevel?: number;
 }
 
 /**

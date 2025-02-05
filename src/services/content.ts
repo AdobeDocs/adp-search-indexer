@@ -1,6 +1,7 @@
 import cheerio from 'cheerio';
 import type { Element } from 'domhandler';
 import type { SitemapUrl, PageContent, ContentSegment } from '../types/index';
+import type { AlgoliaRecord } from '../types/algolia';
 import { TaskQueue } from '../utils/queue';
 import { retry } from '../utils/retry';
 
@@ -561,4 +562,122 @@ export const analyzeSamplePages = async (urls: SitemapUrl[]): Promise<void> => {
       }
     }
   }
-}; 
+};
+
+/**
+ * Determines if a page's content should be segmented into multiple records.
+ * Content is segmented if:
+ * 1. Content size exceeds 8KB (leaving room for metadata)
+ * 2. Page has multiple distinct sections with headings
+ * 3. Content is structured (has clear hierarchy)
+ */
+export function shouldSegmentContent(content: PageContent): boolean {
+  const CONTENT_SIZE_THRESHOLD = 8 * 1024; // 8KB
+  const MIN_SEGMENTS = 3; // Minimum number of segments to consider breaking down
+
+  // Check content size
+  if (content.content.length > CONTENT_SIZE_THRESHOLD) {
+    return true;
+  }
+
+  // Check if we have enough distinct segments
+  if (content.segments.length >= MIN_SEGMENTS) {
+    return true;
+  }
+
+  // If content has a clear hierarchy (multiple heading levels)
+  const headingLevels = new Set(content.segments.map(segment => segment.level));
+  if (headingLevels.size > 1) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Creates multiple Algolia records from a single page content by segmenting it.
+ * Returns an array of records: one parent record and multiple segment records.
+ */
+export function createSegmentedRecords(content: PageContent, indexName: string, productName: string): AlgoliaRecord[] {
+  const records: AlgoliaRecord[] = [];
+  const parentId = Buffer.from(content.url).toString('base64');
+  const urlPath = new URL(content.url).pathname;
+  const pathSegments = urlPath.split('/').filter(Boolean);
+  
+  // Build base hierarchy from path
+  const baseHierarchy = {
+    lvl0: pathSegments[0] || productName,
+    lvl1: pathSegments.length > 1 ? pathSegments.slice(0, 2).join('/') : undefined,
+    lvl2: pathSegments.length > 2 ? pathSegments.slice(0, 3).join('/') : undefined
+  };
+  
+  // Determine the best title
+  const title = content.title || 
+                content.metadata?.['og_title'] || 
+                content.headings[0] || 
+                pathSegments[pathSegments.length - 1]?.toUpperCase() || 
+                productName;
+  
+  const parentRecord: AlgoliaRecord = {
+    objectID: parentId,
+    url: content.url,
+    path: urlPath,
+    indexName,
+    title,
+    description: content.description || content.metadata?.['og_description'] || '',
+    content: content.description || '',
+    headings: content.headings || [],
+    product: productName,
+    type: 'documentation',
+    topics: Array.isArray(content.metadata?.['topics']) ? content.metadata['topics'] : [],
+    lastModified: new Date().toISOString(),
+    hierarchy: {
+      ...baseHierarchy,
+      lvl0: pathSegments[0] || productName,
+      lvl1: content.headings[0] || pathSegments.slice(0, 2).join('/'),
+      lvl2: content.headings[1] || pathSegments.slice(0, 3).join('/')
+    },
+    metadata: {
+      keywords: content.metadata?.['keywords'] || '',
+      products: productName,
+      og_title: content.metadata?.['og_title'] || title,
+      og_description: content.metadata?.['og_description'] || content.description || '',
+      og_image: content.metadata?.['og_image'] || ''
+    },
+    structure: content.structure || {
+      hasHeroSection: false,
+      hasDiscoverBlocks: false,
+      contentTypes: []
+    },
+    isParent: true
+  };
+  
+  records.push(parentRecord);
+
+  // Create child records for each segment
+  content.segments.forEach((segment, index) => {
+    const segmentHierarchy = {
+      lvl0: pathSegments[0] || productName,
+      lvl1: content.headings[0] || pathSegments.slice(0, 2).join('/'),
+      lvl2: segment.heading
+    };
+
+    const segmentRecord: AlgoliaRecord = {
+      ...parentRecord,
+      objectID: `${parentId}_${index}`,
+      url: `${content.url}#${segment.heading.toLowerCase().replace(/\s+/g, '-')}`,
+      title: segment.heading || title,
+      content: segment.content,
+      isParent: false,
+      parentObjectID: parentId,
+      sectionTitle: segment.heading,
+      sectionLevel: segment.level,
+      headings: [segment.heading],
+      hierarchy: segmentHierarchy
+    };
+    
+    records.push(segmentRecord);
+  });
+
+  return records;
+} 

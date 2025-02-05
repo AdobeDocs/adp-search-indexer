@@ -1,7 +1,8 @@
 import type { SitemapUrl } from '../types/index';
 import type { AlgoliaRecord } from '../types/algolia';
+import type { PageContent } from '../types/index';
 import { ProductMappingService } from './product-mapping';
-import { fetchPageContent } from './content';
+import { fetchPageContent, shouldSegmentContent, createSegmentedRecords } from './content';
 import { TaskQueue } from '../utils/queue';
 import { ensureDir } from '../utils/ensure-dir';
 import { writeFile } from 'node:fs/promises';
@@ -95,23 +96,27 @@ export class ContentIndexer {
       // Update content URL to use our base URL
       content.url = transformedUrl;
 
-      await this.indexContent(content, indexInfo);
+      // Determine if content should be segmented
+      if (shouldSegmentContent(content)) {
+        const records = createSegmentedRecords(content, indexInfo.indexName, indexInfo.productName);
+        await this.addRecordsToIndex(records, indexInfo);
+      } else {
+        await this.indexContent(content, indexInfo);
+      }
+
       if (this.verbose) {
         console.log(`✓ ${transformedUrl}`);
       }
+      
       this.updateStats(indexInfo.indexName);
     } catch (error) {
-      if (error instanceof Error) {
-        if (error.message.includes('404')) {
-          if (this.verbose) {
-            console.warn(`⚠️ 404: ${new URL(url.loc).pathname}`);
-          }
-          this.updateStats(null, error);
-        } else {
-          console.error(`❌ Error indexing ${url.loc}: ${error.message}`);
-          this.updateStats(null, error);
-        }
+      if (error && typeof error === 'object' && 'type' in error && (error as { type: string }).type === 'skip') {
+        this.updateStats(null, new Error((error as { message?: string }).message || 'Skip error'));
+        return;
       }
+      
+      console.error(`Failed to process ${url.loc}:`, error);
+      this.updateStats(null, error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -204,29 +209,38 @@ export class ContentIndexer {
     }
   }
 
-  private async indexContent(content: any, indexInfo: IndexInfo): Promise<void> {
+  private async indexContent(content: PageContent, indexInfo: IndexInfo): Promise<void> {
     try {
+      // Determine the best title to use
+      const title = content.title || 
+                   content.metadata?.['og_title'] || 
+                   content.headings[0] || 
+                   content.metadata?.['title'] ||
+                   indexInfo.productName;
+
       // Create the Algolia record
       const record: AlgoliaRecord = {
         objectID: Buffer.from(content.url).toString('base64'),
         url: content.url,
         path: new URL(content.url).pathname,
         indexName: indexInfo.indexName,
-        title: content.title || '',
-        description: content.description || '',
+        title,
+        description: content.description || content.metadata?.['og_description'] || '',
         content: content.mainContent || content.content || '',
         headings: content.headings || [],
         product: indexInfo.productName,
-        type: content.metadata?.type || 'documentation',
-        topics: content.metadata?.topics || [],
-        lastModified: content.metadata?.lastModified || new Date().toISOString(),
-        hierarchy: this.buildHierarchy(content.url),
+        type: content.metadata?.['type'] || 'documentation',
+        topics: Array.isArray(content.metadata?.['topics']) ? content.metadata['topics'] : [],
+        lastModified: content.metadata?.['lastModified'] || new Date().toISOString(),
+        hierarchy: this.buildHierarchy(content.url, content.headings),
         metadata: {
-          keywords: (content.metadata?.keywords || []).join(','),
+          keywords: Array.isArray(content.metadata?.['keywords']) 
+            ? content.metadata['keywords'].join(',') 
+            : String(content.metadata?.['keywords'] || ''),
           products: indexInfo.productName,
-          og_title: content.metadata?.og_title || '',
-          og_description: content.metadata?.og_description || '',
-          og_image: content.metadata?.og_image || ''
+          og_title: content.metadata?.['og_title'] || title,
+          og_description: content.metadata?.['og_description'] || content.description || '',
+          og_image: content.metadata?.['og_image'] || ''
         },
         structure: content.structure || {
           hasHeroSection: false,
@@ -255,18 +269,28 @@ export class ContentIndexer {
     }
   }
 
-  private buildHierarchy(url: string): { lvl0: string; lvl1?: string; lvl2?: string; } {
+  private buildHierarchy(url: string, headings: string[] = []): { lvl0: string; lvl1?: string; lvl2?: string; } {
     try {
       const pathname = new URL(url).pathname;
       const segments = pathname.split('/').filter(Boolean);
       
       return {
-        lvl0: segments[0] || '',
+        lvl0: segments[0] || headings[0] || '',
         ...(segments[1] && { lvl1: segments.slice(0, 2).join('/') }),
         ...(segments[2] && { lvl2: segments.slice(0, 3).join('/') })
       };
     } catch {
-      return { lvl0: '' };
+      return { lvl0: headings[0] || '' };
     }
+  }
+
+  private async addRecordsToIndex(records: AlgoliaRecord[], indexInfo: IndexInfo): Promise<void> {
+    const { indexName } = indexInfo;
+    
+    if (!this.recordsByIndex.has(indexName)) {
+      this.recordsByIndex.set(indexName, []);
+    }
+    
+    this.recordsByIndex.get(indexName)?.push(...records);
   }
 } 
