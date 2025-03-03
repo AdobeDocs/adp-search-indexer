@@ -28,7 +28,7 @@ export function parseArgs(): IndexerArgs {
   });
   
   return {
-    baseUrl: process.env['BASE_URL'] || 'https://main--adp-devsite--adobedocs.aem.page',
+    baseUrl: process.env['BASE_URL'] || '',
     sitemapUrl: process.env['SITEMAP_URL'] || '/sitemap.xml',
     mode: argv['mode'] || 'console',
     verbose: argv['verbose']

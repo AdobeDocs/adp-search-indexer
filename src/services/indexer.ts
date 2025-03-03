@@ -2,6 +2,7 @@ import type { SitemapUrl } from '../types/index';
 import type { AlgoliaRecord } from '../types/algolia';
 import type { PageContent } from '../types/index';
 import { ProductMappingService } from './product-mapping';
+import { AlgoliaService } from './algolia';
 import { fetchPageContent, shouldSegmentContent, createSegmentedRecords } from './content';
 import { TaskQueue } from '../utils/queue';
 import { ensureDir } from '../utils/ensure-dir';
@@ -37,8 +38,15 @@ export class ContentIndexer {
   private mappingUrl: string;
   private recordsByIndex: Map<string, AlgoliaRecord[]>;
   private baseUrl: string;
+  private algolia: AlgoliaService;
 
-  constructor(mappingUrl: string, baseUrl: string, concurrency = 5, verbose = false) {
+  constructor(
+    mappingUrl: string, 
+    baseUrl: string, 
+    algolia: AlgoliaService,
+    concurrency = 5, 
+    verbose = false
+  ) {
     this.productMapping = new ProductMappingService(verbose);
     this.queue = new TaskQueue(concurrency);
     this.verbose = verbose;
@@ -54,6 +62,7 @@ export class ContentIndexer {
     this.mappingUrl = mappingUrl;
     this.recordsByIndex = new Map();
     this.baseUrl = baseUrl;
+    this.algolia = algolia;
   }
 
   async initialize(): Promise<void> {
@@ -157,8 +166,15 @@ export class ContentIndexer {
         records
       };
 
+      // Save to file
       const filePath = join(this.outputDir, `${indexName}-records.json`);
       await writeFile(filePath, JSON.stringify(indexedContent, null, 2));
+      
+      // Save to Algolia
+      if (this.algolia) {
+        console.log(`\n📤 Saving ${records.length} records to Algolia index: ${indexName}`);
+        await this.algolia.saveRecords(records);
+      }
       
       // Track the number of records saved for each index
       savedCounts.set(indexName, (savedCounts.get(indexName) || 0) + records.length);

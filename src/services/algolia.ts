@@ -134,19 +134,37 @@ export class AlgoliaService {
         records,
         productName
       });
+      return;
     }
 
-    // Only send to Algolia if not in test mode
-    if (this.testMode === 'none') {
+    try {
+      // First check if index exists
+      let algoliaIndex: SearchIndex;
       try {
-        await index.setSettings(settings);
-        await index.saveObjects(records);
-        this.log('✅ Index configured and records saved successfully');
+        await index.getSettings();
+        algoliaIndex = index;
+        this.log(`Using existing index: ${index.indexName}`, 'info', true);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.log(`Failed to configure index: ${message}`, 'error', true);
-        throw error;
+        if ((error as any).status === 404) {
+          this.log(`Creating new index: ${index.indexName}`, 'info', true);
+          algoliaIndex = this.client.initIndex(index.indexName);
+          
+          // Configure settings for new index
+          this.log(`Configuring settings for new index: ${index.indexName}`, 'info', true);
+          await algoliaIndex.setSettings(settings);
+        } else {
+          throw error;
+        }
       }
+
+      // Save records
+      this.log(`Saving ${records.length} records to index: ${index.indexName}`, 'info', true);
+      await algoliaIndex.saveObjects(records);
+      this.log(`✅ Successfully saved ${records.length} records to ${index.indexName}`, 'info', true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.log(`Failed to configure index: ${message}`, 'error', true);
+      throw error;
     }
   }
 
@@ -345,45 +363,64 @@ export class AlgoliaService {
       failedIndices: 0
     };
 
+    console.log('\n🔍 Debug: Starting record processing');
+    console.log(`Total records received: ${records.length}`);
+
     // First, group records by index
     const recordsByIndex = new Map<string, AlgoliaRecord[]>();
     
-    console.log('\n📊 Processing Records', 'info', true);
-    console.log('==================', 'info', true);
-    console.log(`Total records to process: ${records.length}`, 'info', true);
-    
     // Group and validate records
     for (const record of records) {
+      console.log(`\n📄 Processing record:`);
+      console.log(`URL: ${record.url}`);
+      console.log(`Current Index Name: ${record.indexName}`);
+      console.log(`Record Content Length: ${record.content.length}`);
+      console.log(`Record Title: ${record.title}`);
+      console.log(`Record Product: ${record.product}`);
+      
       const indexInfo = this.getIndexForUrl(record.url);
+      
       if (!indexInfo) {
-        console.warn(`⚠️  Skipping record: ${record.url}`);
-        console.warn('   Reason: No matching index found in product mapping');
+        console.log(`⚠️  No index mapping found for URL: ${record.url}`);
         stats.skipped++;
         continue;
       }
 
+      console.log(`✓ Found index mapping:`);
+      console.log(`  • Index Name: ${indexInfo.indexName}`);
+      console.log(`  • Product: ${indexInfo.productName}`);
+
       const { indexName } = indexInfo;
       if (!recordsByIndex.has(indexName)) {
+        console.log(`Creating new record group for index: ${indexName}`);
         recordsByIndex.set(indexName, []);
       }
       recordsByIndex.get(indexName)!.push(record);
       stats.byIndex.set(indexName, (stats.byIndex.get(indexName) || 0) + 1);
     }
 
+    console.log('\n📊 Record grouping summary:');
+    for (const [indexName, indexRecords] of recordsByIndex) {
+      console.log(`${indexName}: ${indexRecords.length} records`);
+    }
+
     // Process each index
     const results: IndexingResult[] = [];
-    console.log('\n📝 Processing Indices');
-    console.log('===================');
 
     for (const [indexName, indexRecords] of recordsByIndex) {
-      console.log(`\n🔄 Processing index: ${indexName}`);
-      console.log(`   Records to index: ${indexRecords.length}`);
+      console.log(`\n🔄 Configuring index: ${indexName}`);
+      console.log(`Records to index: ${indexRecords.length}`);
+      console.log('Sample record:');
+      console.log(JSON.stringify(indexRecords[0], null, 2));
       
       try {
+        console.log('Getting index instance...');
         const index = this.getIndex(indexName);
-        await this.configureIndex(index, indexRecords, indexRecords[0]?.product || '');
-        console.log(`✅ Successfully indexed ${indexRecords.length} records to ${indexName}`);
         
+        console.log('Configuring index and saving records...');
+        await this.configureIndex(index, indexRecords, indexRecords[0]?.product || '');
+        
+        console.log(`✅ Successfully configured and saved records to ${indexName}`);
         results.push({
           url: '',
           indexName,
@@ -391,7 +428,7 @@ export class AlgoliaService {
         });
         stats.successfulIndices++;
       } catch (error) {
-        console.error(`❌ Failed to index records to ${indexName}:`, error);
+        console.error(`❌ Error configuring index ${indexName}:`, error);
         results.push({
           url: '',
           indexName,
@@ -403,16 +440,20 @@ export class AlgoliaService {
       }
     }
 
-    // Print final statistics
-    console.log('\n📈 Final Statistics');
-    console.log('=================');
+    // Print final stats
+    console.log('\n📈 Final Indexing Statistics');
+    console.log('=========================');
     console.log(`Total records processed: ${stats.total}`);
-    console.log(`Successfully indexed: ${stats.total - stats.skipped - stats.errors}`);
-    console.log(`Skipped: ${stats.skipped}`);
-    console.log(`Errors: ${stats.errors}`);
-    console.log(`\nBy Index:`);
-    for (const [index, count] of stats.byIndex) {
-      console.log(`${index}: ${count} records`);
+    console.log(`Records skipped: ${stats.skipped}`);
+    console.log(`Records with errors: ${stats.errors}`);
+    console.log(`Successful indices: ${stats.successfulIndices}`);
+    console.log(`Failed indices: ${stats.failedIndices}`);
+    
+    if (stats.byIndex.size > 0) {
+      console.log('\nBreakdown by index:');
+      for (const [indexName, count] of stats.byIndex) {
+        console.log(`  • ${indexName}: ${count} records`);
+      }
     }
 
     return results;

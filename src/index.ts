@@ -63,6 +63,7 @@ async function main() {
     const indexer = new ContentIndexer(
       PRODUCT_MAPPING_URL,
       baseUrl,
+      algoliaService,
       config.app.maxConcurrentRequests,
       args.verbose
     );

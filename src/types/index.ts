@@ -39,7 +39,7 @@ export interface Config {
     /** Algolia API key */
     apiKey: string;
     /** Name of the Algolia index to use */
-    indexName: string;
+    indexName?: string;
   };
   /** Application-specific settings */
   app: {
@@ -50,7 +50,7 @@ export interface Config {
     /** Maximum number of concurrent requests allowed */
     maxConcurrentRequests: number;
     /** Operational mode for the application */
-    mode: 'none' | 'file' | 'console';
+    mode: 'index' | 'export' | 'console';
     /** Whether to enable verbose logging */
     verbose: boolean;
     /** Optional specific index to target */
