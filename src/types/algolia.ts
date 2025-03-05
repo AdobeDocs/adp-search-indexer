@@ -5,10 +5,12 @@
 export interface AlgoliaRecord {
   /** Unique identifier for the record */
   objectID: string;
-  /** Full URL of the page */
+  /** Full URL of the page, including any fragment identifier */
   url: string;
-  /** URL path component */
+  /** URL path component without fragment */
   path: string;
+  /** Fragment identifier (anchor) from the URL, if any */
+  fragment?: string;
   /** Name of the Algolia index containing this record */
   indexName: string;
   /** Page title */

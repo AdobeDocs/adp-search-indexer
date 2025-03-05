@@ -256,7 +256,9 @@ export class AlgoliaService {
     isFirstSegment: boolean
   ): AlgoliaRecord => {
     const url = this.normalizeUrl(content.url);
-    const path = new URL(url).pathname;
+    const urlObj = new URL(url);
+    const path = urlObj.pathname;
+    const fragment = urlObj.hash || undefined;
     const metadata = content.metadata || {};
     const extractedMetadata = this.extractMetadata(metadata);
     
@@ -268,6 +270,7 @@ export class AlgoliaService {
       objectID: this.generateObjectId(url, segment.heading),
       url,
       path,
+      fragment,
       title: isFirstSegment ? content.title : '',
       content: segment.content,
       headings: segment.heading ? [segment.heading] : [],
@@ -290,6 +293,9 @@ export class AlgoliaService {
   createRecord(content: PageContent): AlgoliaRecord[] {
     console.log(`\n🔄 Creating records for: ${content.url}`);
     const url = this.normalizeUrl(content.url);
+    const urlObj = new URL(url);
+    const path = urlObj.pathname;
+    const fragment = urlObj.hash || undefined;
     const indexInfo = this.getIndexForUrl(url);
     const metadata = content.metadata || {};
     const extractedMetadata = this.extractMetadata(metadata);
@@ -329,7 +335,8 @@ export class AlgoliaService {
       records.push({
         objectID: this.generateObjectId(url),
         url,
-        path: new URL(url).pathname,
+        path,
+        fragment,
         title: content.title,
         content: content.mainContent,
         headings: content.headings[0] ? [content.headings[0]] : [],

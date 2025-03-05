@@ -601,7 +601,9 @@ export function shouldSegmentContent(content: PageContent): boolean {
 export function createSegmentedRecords(content: PageContent, indexName: string, productName: string): AlgoliaRecord[] {
   const records: AlgoliaRecord[] = [];
   const parentId = Buffer.from(content.url).toString('base64');
-  const urlPath = new URL(content.url).pathname;
+  const urlObj = new URL(content.url);
+  const urlPath = urlObj.pathname;
+  const urlFragment = urlObj.hash || undefined;
   const pathSegments = urlPath.split('/').filter(Boolean);
   
   // Build base hierarchy from path
@@ -622,6 +624,7 @@ export function createSegmentedRecords(content: PageContent, indexName: string, 
     objectID: parentId,
     url: content.url,
     path: urlPath,
+    fragment: urlFragment,
     indexName,
     title,
     description: content.description || content.metadata?.['og_description'] || '',
@@ -662,10 +665,16 @@ export function createSegmentedRecords(content: PageContent, indexName: string, 
       lvl2: segment.heading
     };
 
+    // Create a fragment for the segment based on the heading
+    const segmentFragment = `#${segment.heading.toLowerCase().replace(/\s+/g, '-')}`;
+    const segmentUrl = `${urlObj.origin}${urlPath}${segmentFragment}`;
+
     const segmentRecord: AlgoliaRecord = {
       ...parentRecord,
       objectID: `${parentId}_${index}`,
-      url: `${content.url}#${segment.heading.toLowerCase().replace(/\s+/g, '-')}`,
+      url: segmentUrl,
+      path: urlPath,
+      fragment: segmentFragment,
       title: segment.heading || title,
       content: segment.content,
       isParent: false,

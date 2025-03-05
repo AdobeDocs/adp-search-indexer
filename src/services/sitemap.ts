@@ -47,7 +47,9 @@ export async function analyzeSitemap(urls: SitemapUrl[], productMappingService: 
   const validUrls = urls.filter(({ loc }) => {
     try {
       const url = new URL(loc);
-      return !productMappingService.shouldExcludePath(url.pathname);
+      // Process pathname without fragments for exclusion check
+      const pathname = url.pathname;
+      return !productMappingService.shouldExcludePath(pathname);
     } catch (error) {
       console.warn(`⚠️  Invalid URL: ${loc}`);
       return false;
@@ -57,6 +59,16 @@ export async function analyzeSitemap(urls: SitemapUrl[], productMappingService: 
   console.log(`Total URLs in sitemap: ${urls.length}`);
   console.log(`URLs to process: ${validUrls.length}`);
   console.log(`URLs skipped: ${urls.length - validUrls.length}`);
+
+  // Count URLs with fragments
+  const urlsWithFragments = validUrls.filter(({ loc }) => {
+    try {
+      return loc.includes('#');
+    } catch (error) {
+      return false;
+    }
+  });
+  console.log(`URLs with fragments: ${urlsWithFragments.length}`);
 
   // Analyze path segments of valid URLs only
   const pathSegments = new Map<string, number>();

@@ -69,6 +69,28 @@ bun start --index
    }
    ```
 
+## URL Fragment Handling
+
+The indexer now properly handles URL fragments (anchor links) throughout the indexing process:
+
+- The `AlgoliaRecord` type includes a dedicated `fragment` field to store anchor information
+- URL fragments are preserved when processing sitemap URLs
+- Path matching logic properly separates fragments from paths for accurate product matching
+- Segment records automatically generate appropriate fragment identifiers based on headings
+- A utility function `constructUrlFromRecord()` is provided to help construct complete URLs with fragments
+
+When using search results in your application, make sure to use the full URL including fragments:
+
+```typescript
+// Import the utility function
+import { constructUrlFromRecord } from './utils/url';
+
+// Use it to construct complete URLs from search results
+const completeUrl = constructUrlFromRecord(searchResult);
+```
+
+This ensures users are directed to the exact section of content they're looking for, rather than just the top of the page.
+
 ## Development
 
 ### Testing

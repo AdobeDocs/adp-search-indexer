@@ -19,6 +19,7 @@ export interface IndexMatch {
   productName: string;
   pathPrefix: string;
   url: string;
+  fragment?: string;
 }
 
 interface IndexInfo {
@@ -132,16 +133,27 @@ export class ProductMappingService {
       return this.validMatches.get(urlPath)!;
     }
 
+    // Extract fragment if present
+    let fragment = '';
+    let pathWithoutFragment = urlPath;
+    
+    // Check for and extract fragment
+    const fragmentIndex = urlPath.indexOf('#');
+    if (fragmentIndex !== -1) {
+      fragment = urlPath.substring(fragmentIndex);
+      pathWithoutFragment = urlPath.substring(0, fragmentIndex);
+    }
+
     // Check if this is a path we should exclude
-    if (this.shouldExcludePath(urlPath)) {
+    if (this.shouldExcludePath(pathWithoutFragment)) {
       if (this.verbose) {
-        console.log(`🚫 Skipping excluded path: ${urlPath}`);
+        console.log(`🚫 Skipping excluded path: ${pathWithoutFragment}`);
       }
       return null;
     }
 
-    // Clean the URL path
-    const cleanPath = urlPath.replace(/\/$/, '');
+    // Clean the URL path (without fragment)
+    const cleanPath = pathWithoutFragment.replace(/\/$/, '');
     
     // Find all matching indices
     interface Match {
@@ -194,7 +206,8 @@ export class ProductMappingService {
         indexName: bestMatch.index,
         productName: bestMatch.product,
         pathPrefix: bestMatch.prefix,
-        url: urlPath
+        url: urlPath, // Preserve the original URL with fragment
+        fragment: fragment || undefined // Add fragment if present
       };
 
       // Cache the match
