@@ -4,6 +4,7 @@ import type { SitemapUrl, PageContent, ContentSegment } from '../types/index';
 import type { AlgoliaRecord } from '../types/algolia';
 import { TaskQueue } from '../utils/queue';
 import { retry } from '../utils/retry';
+import { headingToFragmentId } from '../utils/url';
 
 type CheerioRoot = ReturnType<typeof cheerio.load>;
 
@@ -665,8 +666,8 @@ export function createSegmentedRecords(content: PageContent, indexName: string, 
       lvl2: segment.heading
     };
 
-    // Create a fragment for the segment based on the heading
-    const segmentFragment = `#${segment.heading.toLowerCase().replace(/\s+/g, '-')}`;
+    // Create a fragment for the segment based on the heading using the utility function
+    const segmentFragment = headingToFragmentId(segment.heading);
     const segmentUrl = `${urlObj.origin}${urlPath}${segmentFragment}`;
 
     const segmentRecord: AlgoliaRecord = {

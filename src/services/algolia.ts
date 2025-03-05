@@ -5,6 +5,7 @@ import { createHash } from 'crypto';
 import { ensureDir } from '../utils/ensure-dir';
 import { join } from 'node:path';
 import { ProductMappingService } from './product-mapping';
+import { headingToFragmentId } from '../utils/url';
 
 export interface AlgoliaServiceConfig {
   appId: string;
@@ -258,7 +259,13 @@ export class AlgoliaService {
     const url = this.normalizeUrl(content.url);
     const urlObj = new URL(url);
     const path = urlObj.pathname;
-    const fragment = urlObj.hash || undefined;
+    
+    // Generate a fragment from the heading if available
+    let fragment = urlObj.hash || undefined;
+    if (segment.heading) {
+      fragment = headingToFragmentId(segment.heading);
+    }
+    
     const metadata = content.metadata || {};
     const extractedMetadata = this.extractMetadata(metadata);
     
@@ -268,7 +275,7 @@ export class AlgoliaService {
     
     return {
       objectID: this.generateObjectId(url, segment.heading),
-      url,
+      url: fragment ? `${urlObj.origin}${path}${fragment}` : url,
       path,
       fragment,
       title: isFirstSegment ? content.title : '',

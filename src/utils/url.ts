@@ -3,6 +3,27 @@
  */
 
 /**
+ * Converts a heading text to a URL-friendly fragment identifier.
+ * 
+ * @param heading - The heading text to convert
+ * @returns A URL-friendly fragment identifier
+ */
+export function headingToFragmentId(heading: string): string {
+  if (!heading) return '';
+  
+  return '#' + heading
+    .toLowerCase()
+    // Replace commas, periods, slashes and other punctuation with nothing
+    .replace(/[,.;:'"!?()[\]{}/\\]/g, '')
+    // Replace spaces, plus signs, and ampersands with hyphens
+    .replace(/[\s+&]+/g, '-')
+    // Remove any consecutive hyphens
+    .replace(/-+/g, '-')
+    // Remove leading and trailing hyphens
+    .replace(/^-+|-+$/g, '');
+}
+
+/**
  * Constructs a complete URL from a record, ensuring that fragment identifiers are preserved.
  * 
  * @param record - The AlgoliaRecord containing URL information
