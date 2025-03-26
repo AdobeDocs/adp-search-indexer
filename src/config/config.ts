@@ -1,5 +1,36 @@
 import { z } from 'zod';
 import type { Config } from '../types/index';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { parse } from 'node:querystring';
+
+// Load environment variables from .env file
+try {
+  const envPath = resolve(process.cwd(), '.env');
+  const envContent = readFileSync(envPath, 'utf8');
+  
+  // Simple parser for .env files
+  const envLines = envContent.split('\n');
+  for (const line of envLines) {
+    const trimmedLine = line.trim();
+    
+    // Skip comments and empty lines
+    if (!trimmedLine || trimmedLine.startsWith('#')) {
+      continue;
+    }
+    
+    const [key, ...valueParts] = trimmedLine.split('=');
+    const value = valueParts.join('=');
+    
+    if (key && value) {
+      process.env[key.trim()] = value.trim();
+    }
+  }
+  
+  console.log('✅ Loaded environment variables from .env file');
+} catch (error) {
+  console.warn('⚠️ No .env file found or error loading it:', error);
+}
 
 const configSchema = z.object({
   SITEMAP_URL: z.string().startsWith('/'),

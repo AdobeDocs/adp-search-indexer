@@ -14,7 +14,7 @@ This tool enhances the developer.adobe.com search experience by:
 
 1. Install dependencies:
 ```bash
-bun install
+npm install
 ```
 
 2. Configure environment:
@@ -26,15 +26,21 @@ cp .env.example .env
 3. Run the indexer:
 ```bash
 # Test mode (output to console)
-bun start --test-console
+npm start -- --test-console
+
+# Export mode (save to JSON files)
+npm run export
+
+# Verify indices (check exported files or Algolia)
+npm run verify
 
 # Production mode (index to Algolia)
-bun start --index
+npm start -- --index
 ```
 
 ## Key Features
 
-- 🚀 High-performance content processing with Bun and TypeScript
+- 🚀 High-performance content processing with Node.js and TypeScript
 - 📑 Smart content segmentation for improved search relevance
 - 🔄 Reliable processing with automatic retries
 - 🗂️ Adobe product-based content organization
@@ -71,7 +77,7 @@ bun start --index
 
 ## URL Fragment Handling
 
-The indexer now properly handles URL fragments (anchor links) throughout the indexing process:
+The indexer properly handles URL fragments (anchor links) throughout the indexing process:
 
 - The `AlgoliaRecord` type includes a dedicated `fragment` field to store anchor information
 - URL fragments are preserved when processing sitemap URLs
@@ -93,13 +99,56 @@ This ensures users are directed to the exact section of content they're looking 
 
 ## Development
 
+This project uses:
+- **TypeScript** for type-safe JavaScript
+- **ESM** (ECMAScript Modules) for modern JavaScript module syntax
+- **tsup** for bundling
+- **Node.js** 22.6.0 for Adobe I/O Runtime compatibility
+
+### Project Structure
+
+```
+src/
+├── cli/             # Command-line interfaces
+│   └── verify.ts    # Index verification CLI
+├── config/          # Configuration
+├── services/        # Core services (Algolia, content processing)
+├── types/           # TypeScript type definitions
+└── utils/           # Utility functions
+    └── verify-indices.ts  # Index verification utilities
+```
+
+### Running Locally
+```bash
+# Start the application
+npm start -- --test-console
+
+# Development mode with auto-restart
+npm run dev -- --test-console
+
+# Export to JSON files
+npm run export
+
+# Verify indices
+npm run verify
+```
+
 ### Testing
 ```bash
 # Test specific documentation URLs
-bun start --test-url="https://developer.adobe.com/commerce/docs/..."
+npm start -- --test-url="https://developer.adobe.com/commerce/docs/..."
 
 # Analyze content structure
-bun start --analyze
+npm start -- --analyze
+```
+
+### Building
+```bash
+# Compile TypeScript to JavaScript
+npm run build
+
+# Create distribution package
+npm run dist
 ```
 
 ### Error Handling
@@ -111,12 +160,16 @@ bun start --analyze
 1. Code Quality
    - Use TypeScript strict mode
    - Add JSDoc comments
-   - Run `bun run format`
+   - Run `npm run format`
 
 2. Testing
    - Test with diverse documentation types
    - Verify content quality
    - Validate error handling
+
+## Deployment
+
+This project is designed to run on Adobe I/O Runtime with Node.js 22.6.0.
 
 ## License
 

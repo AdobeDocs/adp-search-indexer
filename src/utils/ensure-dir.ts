@@ -2,8 +2,7 @@ import { mkdir } from 'node:fs/promises';
 
 /**
  * Ensures that a directory exists, creating it if necessary.
- * Note: We use Node.js fs APIs here as Bun implements the Node.js fs module,
- * and these APIs are currently the recommended way to handle directory operations in Bun.
+ * Uses Node.js fs APIs to handle directory operations.
  * 
  * @param dir The directory path to ensure exists
  */

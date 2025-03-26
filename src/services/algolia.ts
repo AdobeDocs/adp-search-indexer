@@ -4,6 +4,7 @@ import type { PageContent, ContentSegment } from '../types/index';
 import { createHash } from 'crypto';
 import { ensureDir } from '../utils/ensure-dir';
 import { join } from 'node:path';
+import { writeFile } from 'node:fs/promises';
 import { ProductMappingService } from './product-mapping';
 import { headingToFragmentId } from '../utils/url';
 
@@ -74,7 +75,7 @@ export class AlgoliaService {
       const fileName = `${indexName}.json`;
       const filePath = join(outputDir, fileName);
       
-      await Bun.write(filePath, JSON.stringify(data, null, 2));
+      await writeFile(filePath, JSON.stringify(data, null, 2));
       this.log(`💾 Saved test data to ${filePath}`, 'info', true);
     } catch (error) {
       this.log(`Failed to save test data: ${error}`, 'error', true);
