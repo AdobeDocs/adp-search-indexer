@@ -255,7 +255,9 @@ export class AlgoliaService {
     content: PageContent,
     segment: ContentSegment,
     indexInfo: { indexName: string; productName: string },
-    isFirstSegment: boolean
+    isFirstSegment: boolean,
+    sitemapLastmod?: string,
+    timestamp?: string
   ): AlgoliaRecord => {
     const url = this.normalizeUrl(content.url);
     const urlObj = new URL(url);
@@ -285,7 +287,9 @@ export class AlgoliaService {
       product: indexInfo.productName,
       indexName: indexInfo.indexName,
       metadata: extractedMetadata,
-      lastModified: metadata['lastModified'] || new Date().toISOString().split('T')[0],
+      lastModified: metadata['lastModified'] || sitemapLastmod || new Date().toISOString().split('T')[0],
+      sourceLastmod: sitemapLastmod,
+      indexedAt: timestamp,
       hierarchy: this.buildHierarchy(content.headings || []),
       type: typeof type === 'string' ? type : 'unknown',
       topics: Array.isArray(topics) ? topics : [],
@@ -298,7 +302,7 @@ export class AlgoliaService {
     };
   };
 
-  createRecord(content: PageContent): AlgoliaRecord[] {
+  createRecord(content: PageContent, sitemapLastmod?: string): AlgoliaRecord[] {
     console.log(`\n🔄 Creating records for: ${content.url}`);
     const url = this.normalizeUrl(content.url);
     const urlObj = new URL(url);
@@ -318,6 +322,7 @@ export class AlgoliaService {
     }
 
     const records: AlgoliaRecord[] = [];
+    const timestamp = new Date().toISOString();
 
     // Create records for each content segment
     (content.segments || []).forEach((segment, index) => {
@@ -331,7 +336,9 @@ export class AlgoliaService {
         content,
         segment,
         indexInfo,
-        index === 0
+        index === 0,
+        sitemapLastmod,
+        timestamp
       );
       records.push(record);
       console.log(`✅ Created record for segment: ${(segment.heading || '').substring(0, 50)}...`);
@@ -351,7 +358,9 @@ export class AlgoliaService {
         product: indexInfo.productName,
         indexName: indexInfo.indexName,
         metadata: extractedMetadata,
-        lastModified: metadata['lastModified'] || new Date().toISOString().split('T')[0],
+        lastModified: metadata['lastModified'] || sitemapLastmod || new Date().toISOString().split('T')[0],
+        sourceLastmod: sitemapLastmod,
+        indexedAt: timestamp,
         hierarchy: this.buildHierarchy(content.headings || []),
         type: typeof type === 'string' ? type : 'unknown',
         topics: Array.isArray(topics) ? topics : [],
@@ -422,6 +431,10 @@ export class AlgoliaService {
     // Process each index
     const results: IndexingResult[] = [];
 
+    // Get app config to determine if using partial mode
+    const partialMode = process.env['PARTIAL'] !== 'false';
+    const forceUpdate = process.env['FORCE'] === 'true';
+
     for (const [indexName, indexRecords] of recordsByIndex) {
       console.log(`\n🔄 Configuring index: ${indexName}`);
       console.log(`Records to index: ${indexRecords.length}`);
@@ -432,8 +445,13 @@ export class AlgoliaService {
         console.log('Getting index instance...');
         const index = this.getIndex(indexName);
         
-        console.log('Configuring index and saving records...');
-        await this.configureIndex(index, indexRecords, indexRecords[0]?.product || '');
+        if (partialMode) {
+          console.log(`Using partial update mode (force=${forceUpdate})`);
+          await this.partialUpdate(index, indexRecords, forceUpdate);
+        } else {
+          console.log('Using full reindex mode');
+          await this.configureIndex(index, indexRecords, indexRecords[0]?.product || '');
+        }
         
         console.log(`✅ Successfully configured and saved records to ${indexName}`);
         results.push({
@@ -472,6 +490,111 @@ export class AlgoliaService {
     }
 
     return results;
+  }
+
+  /**
+   * Performs a partial update to an Algolia index using timestamp-based comparison.
+   * 
+   * This method:
+   * 1. Gets all existing records from the index
+   * 2. Compares them with new records to identify what needs updating/deleting
+   * 3. Only updates records that are newer based on lastmod timestamp
+   * 4. Deletes records that no longer exist in the current sitemap
+   * 
+   * @param index The Algolia index to update
+   * @param newRecords The new records to add/update in the index
+   * @param forceUpdate Whether to force update all records regardless of timestamp
+   * @returns A Promise that resolves when the update is complete
+   */
+  async partialUpdate(index: SearchIndex, newRecords: AlgoliaRecord[], forceUpdate = false): Promise<void> {
+    // Get all new objectIDs
+    const newRecordsMap = new Map(
+      newRecords.map(record => [record.objectID, record])
+    );
+    
+    // Records to update and delete
+    const recordsToUpdate: AlgoliaRecord[] = [];
+    const objectIDsToDelete: string[] = [];
+    
+    // Add timestamp to all new records
+    const timestamp = new Date().toISOString();
+    newRecords.forEach(record => {
+      record.indexedAt = timestamp;
+    });
+    
+    console.log('\n📊 Partial update analysis:');
+    console.log(`Index: ${index.indexName}`);
+    console.log(`New records: ${newRecords.length}`);
+    
+    try {
+      // Check if index exists first
+      await index.getSettings();
+      
+      // Get all existing records
+      console.log('Fetching existing records...');
+      let existingRecordsCount = 0;
+      
+      // Use browse method instead of browseObjects for better typing
+      await index.browseObjects({
+        batch: (hits) => {
+          for (const hit of hits) {
+            existingRecordsCount++;
+            const objectID = hit.objectID as string;
+            const existingRecord = hit as AlgoliaRecord;
+            
+            // Check if this record exists in new set
+            if (newRecordsMap.has(objectID)) {
+              const newRecord = newRecordsMap.get(objectID)!;
+              
+              // Update if forced or new content is newer
+              const shouldUpdate = forceUpdate || 
+                !existingRecord.sourceLastmod || 
+                !newRecord.sourceLastmod ||
+                new Date(newRecord.sourceLastmod) > new Date(existingRecord.sourceLastmod);
+              
+              if (shouldUpdate) {
+                recordsToUpdate.push(newRecord);
+              }
+              
+              // Remove from map so we don't process it again
+              newRecordsMap.delete(objectID);
+            } else {
+              // Record no longer in sitemap, mark for deletion
+              objectIDsToDelete.push(objectID);
+            }
+          }
+        }
+      });
+      
+      // Add remaining new records (not in existing set)
+      recordsToUpdate.push(...newRecordsMap.values());
+      
+      // Log stats
+      console.log(`\n📊 Index "${index.indexName}" update summary:`);
+      console.log(`  • Existing records: ${existingRecordsCount}`);
+      console.log(`  • Records to update: ${recordsToUpdate.length}`);
+      console.log(`  • Records to delete: ${objectIDsToDelete.length}`);
+      
+      // Perform operations
+      if (objectIDsToDelete.length > 0) {
+        console.log(`\n🗑️  Deleting ${objectIDsToDelete.length} obsolete records from ${index.indexName}`);
+        await index.deleteObjects(objectIDsToDelete);
+      }
+      
+      if (recordsToUpdate.length > 0) {
+        console.log(`\n📤 Updating ${recordsToUpdate.length} records in ${index.indexName}`);
+        await index.saveObjects(recordsToUpdate);
+      }
+    } catch (error) {
+      if ((error as any).status === 404) {
+        // Index doesn't exist yet, create it
+        console.log(`Creating new index ${index.indexName} with ${newRecords.length} records`);
+        await index.setSettings(this.getIndexSettings());
+        await index.saveObjects(newRecords);
+      } else {
+        throw error;
+      }
+    }
   }
 
   private buildHierarchy(headings: string[]): AlgoliaRecord['hierarchy'] {

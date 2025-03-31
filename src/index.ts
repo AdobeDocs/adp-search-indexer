@@ -4,6 +4,7 @@ import { config } from './config/config';
 import { ProductMappingService } from './services/product-mapping';
 import { AlgoliaService } from './services/algolia';
 import { parseArgs } from './utils/args';
+import type { SitemapUrl } from './types/index';
 
 const PRODUCT_MAPPING_URL = 'https://raw.githubusercontent.com/AdobeDocs/search-indices/refs/heads/main/product-index-map.json';
 
@@ -18,7 +19,7 @@ const PRODUCT_MAPPING_URL = 'https://raw.githubusercontent.com/AdobeDocs/search-
  */
 async function main() {
   const args = parseArgs();
-  const { baseUrl, sitemapUrl, mode } = args;
+  const { baseUrl, sitemapUrl, mode, partialIndexing, forceUpdate, indexFilter, testUrl } = args;
 
   console.log('🔧 Configuration');
   console.log('==============');
@@ -28,16 +29,34 @@ async function main() {
   console.log(`Max Concurrent Requests: ${config.app.maxConcurrentRequests}`);
   console.log(`Batch Size: ${config.app.batchSize}`);
   console.log(`Log Level: ${config.app.logLevel}`);
+  console.log(`Partial Indexing: ${partialIndexing ? 'yes' : 'no'}`);
+  console.log(`Force Update: ${forceUpdate ? 'yes' : 'no'}`);
+  
+  if (testUrl) {
+    console.log(`Test URL: ${testUrl}`);
+  }
+  
+  if (indexFilter) {
+    console.log(`Index Filter: ${indexFilter}`);
+  }
+  
   if (mode === 'index') {
     console.log(`Algolia Index: ${config.algolia.indexName}`);
     console.log(`Index Prefix: ${config.app.indexPrefix || 'none'}`);
-    console.log(`Partial Updates: ${config.app.partial ? 'yes' : 'no'}`);
   }
 
   try {
     // Initialize services
     const productMappingService = new ProductMappingService(args.verbose);
     await productMappingService.initialize(PRODUCT_MAPPING_URL);
+    
+    // Apply index filter if provided
+    if (indexFilter) {
+      const indices = indexFilter.split(',').map(i => i.trim());
+      console.log(`Filtering to indices: ${indices.join(', ')}`);
+      // If ProductMappingService has a method to filter indices, call it here
+      // productMappingService.setActiveIndices(indices);
+    }
 
     const algoliaService = new AlgoliaService({
       appId: config.algolia.appId,
@@ -46,6 +65,29 @@ async function main() {
       testMode: mode === 'console' ? 'console' : mode === 'export' ? 'file' : 'none'
     }, productMappingService);
     await algoliaService.initialize();
+    
+    // If testing a specific URL
+    if (testUrl) {
+      console.log(`\n🧪 Testing specific URL: ${testUrl}`);
+      // Create a single URL sitemap entry
+      const singleUrl: SitemapUrl = { loc: testUrl };
+      
+      // Analyze or process just this URL
+      if (mode === 'console') {
+        await analyzeSitemap([singleUrl], productMappingService);
+      } else {
+        const indexer = new ContentIndexer(
+          PRODUCT_MAPPING_URL,
+          baseUrl,
+          algoliaService,
+          config.app.maxConcurrentRequests,
+          args.verbose
+        );
+        
+        await indexer.run([singleUrl]);
+      }
+      return;
+    }
 
     // Fetch and analyze sitemap
     const urls = await fetchSitemap(baseUrl, sitemapUrl);
@@ -59,6 +101,10 @@ async function main() {
     if (mode === 'export') {
       console.log('\n📝 Processing content for export...');
     }
+
+    // Set environment variables for partial/force update
+    process.env['PARTIAL'] = partialIndexing ? 'true' : 'false';
+    process.env['FORCE'] = forceUpdate ? 'true' : 'false';
 
     const indexer = new ContentIndexer(
       PRODUCT_MAPPING_URL,

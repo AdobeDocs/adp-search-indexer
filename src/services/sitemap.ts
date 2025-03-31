@@ -25,8 +25,10 @@ export async function fetchSitemap(baseUrl: string, sitemapPath: string): Promis
   const urls: SitemapUrl[] = [];
   $('url').each((_, element) => {
     const loc = $(element).find('loc').text().trim();
+    const lastmod = $(element).find('lastmod').text().trim() || undefined;
+    
     if (loc) {
-      urls.push({ loc });
+      urls.push({ loc, lastmod });
     }
   });
 

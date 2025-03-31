@@ -105,12 +105,12 @@ export class ContentIndexer {
       // Update content URL to use our base URL
       content.url = transformedUrl;
 
-      // Determine if content should be segmented
+      // Determine if content should be segmented - pass lastmod
       if (shouldSegmentContent(content)) {
-        const records = createSegmentedRecords(content, indexInfo.indexName, indexInfo.productName);
+        const records = this.algolia.createRecord(content, url.lastmod);
         await this.addRecordsToIndex(records, indexInfo);
       } else {
-        await this.indexContent(content, indexInfo);
+        await this.indexContent(content, indexInfo, url.lastmod);
       }
 
       if (this.verbose) {
@@ -225,7 +225,7 @@ export class ContentIndexer {
     }
   }
 
-  private async indexContent(content: PageContent, indexInfo: IndexInfo): Promise<void> {
+  private async indexContent(content: PageContent, indexInfo: IndexInfo, lastmod?: string): Promise<void> {
     try {
       // Determine the best title to use
       const title = content.title || 
@@ -247,7 +247,9 @@ export class ContentIndexer {
         product: indexInfo.productName,
         type: content.metadata?.['type'] || 'documentation',
         topics: Array.isArray(content.metadata?.['topics']) ? content.metadata['topics'] : [],
-        lastModified: content.metadata?.['lastModified'] || new Date().toISOString(),
+        lastModified: content.metadata?.['lastModified'] || lastmod || new Date().toISOString(),
+        sourceLastmod: lastmod,
+        indexedAt: new Date().toISOString(),
         hierarchy: this.buildHierarchy(content.url, content.headings),
         metadata: {
           keywords: Array.isArray(content.metadata?.['keywords']) 

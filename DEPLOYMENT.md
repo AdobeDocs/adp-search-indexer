@@ -1,94 +1,124 @@
 # Deployment Guide
 
-This document provides instructions for deploying the ADP Search Indexer to Adobe I/O Runtime.
+This document provides instructions for deploying the ADP Search Indexer to production environments.
 
 ## Prerequisites
 
-- Node.js 22.6.0 (use nvm to manage Node.js versions)
-- Adobe I/O CLI
-- Adobe I/O Runtime credentials
+- Node.js 22.6.0 (required for Adobe I/O Runtime compatibility)
+- Access to your Algolia account
+- Production API keys for Algolia
 
-## Setup Environment
+## Environment Setup
 
-1. Install the Adobe I/O CLI and Runtime plugin:
+1. Create a production `.env` file based on the example:
 
 ```bash
-npm install -g @adobe/aio-cli
-aio plugins:install @adobe/aio-cli-plugin-runtime
+cp .env.example .env.production
 ```
 
-2. Log in to Adobe I/O Runtime:
+2. Configure your production environment variables:
 
-```bash
-aio auth:login
-aio runtime:namespace:list
+```
+# Sitemap Configuration
+SITEMAP_URL=https://developer.adobe.com/sitemap.xml
+BASE_URL=https://developer.adobe.com
+
+# Algolia Configuration
+ALGOLIA_APP_ID=your_production_app_id
+ALGOLIA_API_KEY=your_production_admin_api_key
+ALGOLIA_INDEX_NAME=prod_index_name_prefix
+
+# Application Configuration
+LOG_LEVEL=info
+BATCH_SIZE=50
+MAX_CONCURRENT_REQUESTS=10
+
+# Indexing Configuration
+PARTIAL=true
 ```
 
-## Build and Deploy
+## Production Deployment Options
 
-1. Build the project:
+### Option 1: Scheduled Partial Updates (Recommended)
+
+For regular maintenance, use partial updates which only update records when content has changed (based on sitemap's `lastmod` timestamps):
 
 ```bash
+# Build the application
 npm run build
+
+# Run with production env
+NODE_ENV=production npm run partial-update
 ```
 
-2. Test locally with export mode:
+This approach:
+- Only updates records for content that has changed
+- Removes records for URLs no longer in the sitemap
+- Preserves existing records that haven't changed
+- Preserves records in indices not matched by your sitemap
+
+### Option 2: Force Update
+
+If you need to ensure all content is refreshed (regardless of timestamps):
 
 ```bash
-npm run export
+NODE_ENV=production npm run force-update
 ```
 
-3. Verify the exported indices:
+### Option 3: Full Reindex
+
+For a complete rebuild of matched indices:
 
 ```bash
-npm run verify
+NODE_ENV=production npm run full-reindex
 ```
 
-4. Create a distribution package:
+**⚠️ Warning**: This will clear and rebuild all matched indices. Only use when necessary.
+
+## Setting Up Automated Indexing
+
+### Cron Job Example
+
+For a daily update at 2 AM:
 
 ```bash
-npm run dist
+0 2 * * * cd /path/to/indexer && NODE_ENV=production npm run partial-update >> /var/log/adp-indexer.log 2>&1
 ```
 
-5. Deploy to Adobe I/O Runtime:
+### Docker Example
 
 ```bash
-cd dist
-aio runtime:action:create adp-search-indexer index.js --kind nodejs:22 --web true
-```
-
-## Configuration 
-
-Environment variables can be set in the Adobe I/O Runtime console or via the CLI:
-
-```bash
-aio runtime:action:update adp-search-indexer --param ALGOLIA_APP_ID "your-app-id" --param ALGOLIA_API_KEY "your-api-key"
-```
-
-## Running the Indexer
-
-To trigger the indexer, make an HTTP request to the deployed action:
-
-```bash
-curl -X POST "https://runtime.adobe.io/api/v1/web/{your-namespace}/default/adp-search-indexer" \
-  -H "Content-Type: application/json" \
-  -d '{"base_url": "https://developer.adobe.com", "mode": "index"}'
+docker run --env-file .env.production -v $(pwd)/logs:/app/logs adobe/adp-search-indexer:latest npm run partial-update
 ```
 
 ## Monitoring
 
-View logs and metrics for the action:
+After deployment, check:
 
-```bash
-aio runtime:activation:logs -l 10
-```
+1. The application logs for any issues
+2. Algolia dashboard to confirm records were updated
+3. Search functionality on your site
 
 ## Troubleshooting
 
-- **Cold Start Issues**: Adobe I/O Runtime actions have cold start latency. For long-running indexing tasks, consider breaking up the work into smaller chunks.
-- **Memory Limits**: If you hit memory limits, try adjusting the batch size or concurrent requests in your configuration.
-- **Timeouts**: Actions have a maximum timeout of 60 seconds. For large sitemaps, implement pagination or chunking.
-- **Verify Local Results**: If having issues with Algolia indexing, try running with `npm run export` and then `npm run verify` locally to inspect the records that would be created.
+### Common Issues
+
+- **API Key Permissions**: Ensure your Algolia API key has write permissions
+- **Rate Limiting**: If hitting rate limits, reduce `MAX_CONCURRENT_REQUESTS` in your .env file
+- **Memory Issues**: For large sitemaps, ensure your environment has sufficient memory
+
+### Recovery Steps
+
+If indexing fails:
+
+1. Check logs for specific errors
+2. Fix any configuration issues
+3. Run with the `--verbose` flag for detailed output
+4. If necessary, run a force update to resync indices:
+
+```bash
+NODE_ENV=production npm start -- --index --force --verbose
+```
 
 ## Additional Resources
 

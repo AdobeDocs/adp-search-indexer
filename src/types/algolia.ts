@@ -29,6 +29,10 @@ export interface AlgoliaRecord {
   topics: string[];
   /** Last modification date of the content */
   lastModified: string;
+  /** Original lastmod value from sitemap */
+  sourceLastmod?: string;
+  /** Timestamp when this record was indexed */
+  indexedAt?: string;
   /** Hierarchical structure of the content */
   hierarchy: {
     /** Top level heading */
