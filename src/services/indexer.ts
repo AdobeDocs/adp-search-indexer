@@ -3,7 +3,7 @@ import type { AlgoliaRecord } from '../types/algolia';
 import type { PageContent } from '../types/index';
 import { ProductMappingService } from './product-mapping';
 import { AlgoliaService } from './algolia';
-import { fetchPageContent, shouldSegmentContent, createSegmentedRecords } from './content';
+import { fetchPageContent, shouldSegmentContent } from './content';
 import { TaskQueue } from '../utils/queue';
 import { ensureDir } from '../utils/ensure-dir';
 import { writeFile } from 'node:fs/promises';

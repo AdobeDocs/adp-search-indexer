@@ -2,7 +2,6 @@ import { z } from 'zod';
 import type { Config } from '../types/index';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { parse } from 'node:querystring';
 
 // Load environment variables from .env file
 try {
