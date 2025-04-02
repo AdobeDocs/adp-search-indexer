@@ -59,6 +59,8 @@ export interface Config {
     indexPrefix?: string;
     /** Whether to perform partial indexing */
     partial: boolean;
+    /** URL to product mapping configuration JSON */
+    productMappingUrl: string;
   };
 }
 
@@ -114,7 +116,7 @@ export interface ProductIndex {
 /**
  * Represents the mapping between a product and its indices.
  */
-export interface ProductMapping {
+export interface ProductIndexMapping {
   /** The name of the product */
   productName: string;
   /** Array of index configurations for this product */

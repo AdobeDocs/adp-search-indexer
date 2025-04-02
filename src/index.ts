@@ -6,8 +6,6 @@ import { AlgoliaService } from './services/algolia';
 import { parseArgs } from './utils/args';
 import type { SitemapUrl } from './types/index';
 
-const PRODUCT_MAPPING_URL = 'https://raw.githubusercontent.com/AdobeDocs/search-indices/refs/heads/main/product-index-map.json';
-
 /**
  * Main function that orchestrates the application startup.
  *
@@ -48,14 +46,13 @@ async function main() {
   try {
     // Initialize services
     const productMappingService = new ProductMappingService(args.verbose);
-    await productMappingService.initialize(PRODUCT_MAPPING_URL);
+    await productMappingService.initialize(config.app.productMappingUrl);
     
     // Apply index filter if provided
     if (indexFilter) {
       const indices = indexFilter.split(',').map(i => i.trim());
       console.log(`Filtering to indices: ${indices.join(', ')}`);
-      // If ProductMappingService has a method to filter indices, call it here
-      // productMappingService.setActiveIndices(indices);
+      productMappingService.filterIndices(indices);
     }
 
     const algoliaService = new AlgoliaService({
@@ -64,7 +61,6 @@ async function main() {
       verbose: args.verbose,
       testMode: mode === 'console' ? 'console' : mode === 'export' ? 'file' : 'none'
     }, productMappingService);
-    await algoliaService.initialize();
     
     // If testing a specific URL
     if (testUrl) {
@@ -77,7 +73,7 @@ async function main() {
         await analyzeSitemap([singleUrl], productMappingService);
       } else {
         const indexer = new ContentIndexer(
-          PRODUCT_MAPPING_URL,
+          config.app.productMappingUrl,
           baseUrl,
           algoliaService,
           config.app.maxConcurrentRequests,
@@ -107,7 +103,7 @@ async function main() {
     process.env['FORCE'] = forceUpdate ? 'true' : 'false';
 
     const indexer = new ContentIndexer(
-      PRODUCT_MAPPING_URL,
+      config.app.productMappingUrl,
       baseUrl,
       algoliaService,
       config.app.maxConcurrentRequests,
@@ -121,5 +117,4 @@ async function main() {
   }
 }
 
-// Remove redundant configuration logging
 main(); 

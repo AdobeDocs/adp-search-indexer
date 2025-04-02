@@ -44,6 +44,7 @@ const configSchema = z.object({
   INDEX: z.string().optional(),
   INDEX_PREFIX: z.string().optional(),
   PARTIAL: z.coerce.boolean().default(true),
+  PRODUCT_MAPPING_URL: z.string().default('https://raw.githubusercontent.com/AdobeDocs/search-indices/refs/heads/main/product-index-map.json'),
 }).transform(config => {
   // If we're not in index mode, we don't need Algolia credentials
   if (config.MODE !== 'index') {
@@ -136,6 +137,7 @@ validateEnv();
  * @property {string|undefined} app.index - Optional index value from CLI or environment.
  * @property {string|undefined} app.indexPrefix - Optional prefix for index.
  * @property {boolean} app.partial - Indicates if partial indexing is enabled.
+ * @property {string} app.productMappingUrl - The URL for the product mapping.
  */
 export const config: Config = {
   sitemap: {
@@ -154,6 +156,7 @@ export const config: Config = {
     verbose: process.env['VERBOSE'] === 'true',
     index: process.env['INDEX'],
     indexPrefix: process.env['INDEX_PREFIX'],
-    partial: process.env['PARTIAL'] === 'true'
+    partial: process.env['PARTIAL'] === 'true',
+    productMappingUrl: process.env['PRODUCT_MAPPING_URL'] || 'https://raw.githubusercontent.com/AdobeDocs/search-indices/refs/heads/main/product-index-map.json'
   }
 }; 

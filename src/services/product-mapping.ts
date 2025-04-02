@@ -1,4 +1,4 @@
-import type { ProductMapping, SitemapUrl } from '../types/index';
+import type { ProductIndexMapping, SitemapUrl } from '../types/index';
 
 const EXCLUDED_PATHS = [
   '/nav/',
@@ -32,9 +32,10 @@ interface IndexInfo {
  * This service loads mapping data from a remote JSON file and provides methods to analyze URLs against product mapping rules.
  */
 export class ProductMappingService {
-  private productMappings: ProductMapping[] = [];
+  private productMappings: ProductIndexMapping[] = [];
   private verbose: boolean;
   private validMatches: Map<string, IndexMatch> = new Map();
+  private activeIndices: Set<string> | null = null;
 
   /**
    * Constructs a new ProductMappingService instance.
@@ -46,9 +47,9 @@ export class ProductMappingService {
 
   /**
    * Retrieves the list of product mappings.
-   * @returns The array of ProductMapping objects.
+   * @returns The array of ProductIndexMapping objects.
    */
-  getProductMappings(): ProductMapping[] {
+  getProductMappings(): ProductIndexMapping[] {
     return this.productMappings;
   }
 
@@ -122,6 +123,27 @@ export class ProductMappingService {
   }
 
   /**
+   * Filters the product mappings to only include specific indices.
+   * 
+   * @param indices - An array of index names to include
+   */
+  filterIndices(indices: string[]): void {
+    if (!indices || indices.length === 0) {
+      this.activeIndices = null;
+      return;
+    }
+
+    this.activeIndices = new Set(indices.map((i: string) => i.toLowerCase()));
+    
+    if (this.verbose) {
+      console.log(`🔍 Filtering to ${this.activeIndices.size} indices: ${Array.from(this.activeIndices).join(', ')}`);
+    }
+    
+    // Clear any cached matches as they might not be valid after filtering
+    this.validMatches.clear();
+  }
+
+  /**
    * Finds the best matching product index for a given URL path.
    *
    * @param urlPath - The URL path to match.
@@ -171,6 +193,11 @@ export class ProductMappingService {
     
     for (const product of this.productMappings) {
       for (const index of product.productIndices) {
+        // Skip indices that are not in the active set, if filtering is enabled
+        if (this.activeIndices && !this.activeIndices.has(index.indexName.toLowerCase())) {
+          continue;
+        }
+        
         const cleanPrefix = index.indexPathPrefix.replace(/\/$/, '');
         
         // Check if this path prefix matches the URL exactly

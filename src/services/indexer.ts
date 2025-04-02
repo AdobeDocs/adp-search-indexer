@@ -8,6 +8,7 @@ import { TaskQueue } from '../utils/queue';
 import { ensureDir } from '../utils/ensure-dir';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createHash } from 'crypto';
 
 interface IndexingStats {
   total: number;
@@ -236,7 +237,7 @@ export class ContentIndexer {
 
       // Create the Algolia record
       const record: AlgoliaRecord = {
-        objectID: Buffer.from(content.url).toString('base64'),
+        objectID: createHash('md5').update(content.url).digest('hex'),
         url: content.url,
         path: new URL(content.url).pathname,
         indexName: indexInfo.indexName,

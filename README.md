@@ -170,6 +170,22 @@ The indexer properly handles URL fragments (anchor links) throughout the indexin
 - Segment records automatically generate appropriate fragment identifiers based on headings
 - A utility function `constructUrlFromRecord()` is provided to help construct complete URLs with fragments
 
+### Content Segmentation Approach
+
+The system breaks down large pages into smaller, more focused segments:
+
+1. Pages are analyzed to identify sections based on headings
+2. Each section becomes a separate search record with its own objectID
+3. ObjectIDs are generated as: `MD5(url#heading)`
+4. Each record includes a fragment identifier (e.g., `#introduction`)
+5. When users click search results, they go directly to the specific section
+
+This approach has several advantages:
+- More precise search results pointing to specific sections
+- Better support for partial indexing with deterministic objectIDs
+- Improved search relevance with more focused content
+- Maintains standard web navigation patterns with URL fragments
+
 When using search results in your application, make sure to use the full URL including fragments:
 
 ```typescript
@@ -185,97 +201,3 @@ This ensures users are directed to the exact section of content they're looking 
 ## Development
 
 This project uses:
-- **TypeScript** for type-safe JavaScript
-- **ESM** (ECMAScript Modules) for modern JavaScript module syntax
-- **tsup** for bundling
-- **Node.js** 22.6.0 for Adobe I/O Runtime compatibility
-
-### Project Structure
-
-```
-src/
-├── cli/             # Command-line interfaces
-│   └── verify.ts    # Index verification CLI
-├── config/          # Configuration
-├── services/        # Core services (Algolia, content processing)
-├── types/           # TypeScript type definitions
-└── utils/           # Utility functions
-    └── verify-indices.ts  # Index verification utilities
-```
-
-### Running Locally
-```bash
-# Analyze sitemap without indexing
-npm run analyze
-
-# Export to JSON files (no Algolia updates)
-npm run export
-
-# Standard partial update (default)
-npm run partial-update
-
-# Development mode with auto-restart
-npm run dev
-
-# Verify indices
-npm run verify
-```
-
-### Testing Specific Content
-```bash
-# Test a specific URL
-npm start -- --test-url="https://developer.adobe.com/commerce/docs/..."
-
-# Test with specific indices only
-npm start -- --index --index-filter="photoshop,illustrator" --verbose
-
-# Process only a specific section of the documentation
-npm start -- --index --index-filter="commerce" --partial --verbose
-```
-
-### Production Indexing
-```bash
-# Regular incremental update (recommended for scheduled jobs)
-npm run partial-update
-
-# Force update regardless of timestamps
-npm run force-update
-
-# Complete reindexing (use with caution)
-npm run full-reindex
-```
-
-### Building
-```bash
-# Compile TypeScript to JavaScript
-npm run build
-
-# Create distribution package
-npm run dist
-```
-
-### Error Handling
-- Automatic retries for transient failures
-- Graceful handling of 404s
-- Detailed error reporting
-
-### Contributing
-1. Code Quality
-   - Use TypeScript strict mode
-   - Add JSDoc comments
-   - Run `npm run format`
-
-2. Testing
-   - Test with diverse documentation types
-   - Verify content quality
-   - Validate error handling
-
-## Deployment
-
-This project is designed to run on Adobe I/O Runtime with Node.js 22.6.0.
-
-## License
-
-Copyright Adobe. All rights reserved.
-
-This project is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) file for details.

@@ -35,10 +35,6 @@ export class TestIndexer {
     this.outputDir = join(process.cwd(), 'indexed-content');
   }
 
-  async initialize(): Promise<void> {
-    await this.algolia.initialize();
-  }
-
   private updateStats(record: AlgoliaRecord | null, error?: Error): void {
     this.stats.total++;
     
@@ -130,8 +126,6 @@ export class TestIndexer {
       
       // Ensure output directory exists
       await ensureDir(this.outputDir);
-
-      await this.initialize();
 
       const records = await this.processUrls(urls);
       

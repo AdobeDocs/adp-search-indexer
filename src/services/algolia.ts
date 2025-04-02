@@ -25,7 +25,7 @@ interface IndexMatch {
  *
  * This service initializes an Algolia client using the provided credentials and options,
  * and provides functionality to synchronize content to Algolia based on product mappings.
- * It supports different modes (real, console, or export) to accommodate various use cases.
+ * It supports different modes (index, export, or console) to accommodate various use cases.
  *
  * @param config - The configuration object containing Algolia credentials and other options.
  * @param productMappingService - An instance of ProductMappingService to incorporate product mapping logic.
@@ -170,10 +170,6 @@ export class AlgoliaService {
     }
   }
 
-  async initialize(): Promise<void> {
-    // No initialization needed anymore as we'll configure indices when saving records
-  }
-
   private getIndexForUrl(url: string): IndexMatch | null {
     const path = new URL(url).pathname;
     if (this.verbose) {
@@ -276,12 +272,22 @@ export class AlgoliaService {
     const topics = metadata['topics'];
     const type = metadata['type'];
     
+    // Determine the best title to use with proper fallbacks
+    const title = isFirstSegment
+      ? content.title || metadata['og_title'] || segment.heading || indexInfo.productName
+      : segment.heading || content.title || metadata['og_title'] || indexInfo.productName;
+    
+    // Create appropriate description with fallbacks
+    const description = isFirstSegment 
+      ? content.description || metadata['og_description'] || segment.content.slice(0, 200) || ''
+      : segment.content.slice(0, 200) || content.description || metadata['og_description'] || '';
+    
     return {
       objectID: this.generateObjectId(url, segment.heading),
       url: fragment ? `${urlObj.origin}${path}${fragment}` : url,
       path,
       fragment,
-      title: isFirstSegment ? content.title : '',
+      title,
       content: segment.content,
       headings: segment.heading ? [segment.heading] : [],
       product: indexInfo.productName,
@@ -293,7 +299,7 @@ export class AlgoliaService {
       hierarchy: this.buildHierarchy(content.headings || []),
       type: typeof type === 'string' ? type : 'unknown',
       topics: Array.isArray(topics) ? topics : [],
-      description: '',
+      description: description,
       structure: {
         hasHeroSection: false,
         hasDiscoverBlocks: false,
@@ -347,12 +353,25 @@ export class AlgoliaService {
     // If no segments created records, create one record for the whole page
     if (records.length === 0 && content.mainContent) {
       console.log('ℹ️  No segments created, using main content');
+      
+      // Improved title fallback logic
+      const title = content.title || 
+                    metadata['og_title'] || 
+                    content.headings[0] || 
+                    indexInfo.productName;
+      
+      // Create description with appropriate fallbacks
+      const description = content.description || 
+                         metadata['og_description'] || 
+                         content.mainContent.slice(0, 200) || 
+                         '';
+                    
       records.push({
         objectID: this.generateObjectId(url),
         url,
         path,
         fragment,
-        title: content.title,
+        title,
         content: content.mainContent,
         headings: content.headings[0] ? [content.headings[0]] : [],
         product: indexInfo.productName,
@@ -364,7 +383,7 @@ export class AlgoliaService {
         hierarchy: this.buildHierarchy(content.headings || []),
         type: typeof type === 'string' ? type : 'unknown',
         topics: Array.isArray(topics) ? topics : [],
-        description: '',
+        description: description,
         structure: {
           hasHeroSection: false,
           hasDiscoverBlocks: false,
@@ -598,10 +617,13 @@ export class AlgoliaService {
   }
 
   private buildHierarchy(headings: string[]): AlgoliaRecord['hierarchy'] {
+    // Filter out empty headings and ensure we always have at least one heading
+    const filteredHeadings = (headings || []).filter(h => h && h.trim().length > 0);
+    
     return {
-      lvl0: headings[0] || 'Documentation', // Ensure lvl0 always has a value
-      lvl1: headings[1],
-      lvl2: headings[2]
+      lvl0: filteredHeadings[0] || 'Documentation', // Ensure lvl0 always has a value
+      lvl1: filteredHeadings[1],
+      lvl2: filteredHeadings[2]
     };
   }
 }
