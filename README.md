@@ -198,6 +198,85 @@ const completeUrl = constructUrlFromRecord(searchResult);
 
 This ensures users are directed to the exact section of content they're looking for, rather than just the top of the page.
 
+## Content Authoring Best Practices
+
+The search indexer's effectiveness depends heavily on how content is authored. Following these guidelines will ensure optimal search results and user experience.
+
+### Document Structure
+
+- **Use clear heading hierarchy (H1 → H6)**: Proper heading structure is critical for accurate segmentation
+  - Start with a single H1 for the page title
+  - Use H2 for main sections, H3 for subsections, etc.
+  - Avoid skipping heading levels (e.g., going from H2 to H4)
+  - Don't use headings solely for styling purposes
+
+- **Keep heading text unique and descriptive**: 
+  - Use specific, descriptive headings that clearly indicate the section content
+  - Avoid generic headings like "Introduction" or "Overview" for multiple sections
+  - Include relevant keywords in headings for better search relevance
+
+- **Structure content in discrete sections**:
+  - Each section should focus on a single topic or concept
+  - Aim for sections that can stand alone as search results
+  - Include enough context within each section
+
+### Content Quality
+
+- **Front-load important information**:
+  - Place key concepts and terms at the beginning of sections
+  - Use descriptive first paragraphs that summarize the section
+  - Include relevant keywords naturally in the first few sentences
+
+- **Use descriptive link text**:
+  - Avoid generic link text like "click here" or "read more"
+  - Use keywords that describe the linked content
+  - Link text should make sense out of context
+
+- **Provide sufficient context**:
+  - Don't rely on previous sections for understanding
+  - Define acronyms and terms within each major section
+  - Include enough information for each section to be useful on its own
+
+### Metadata
+
+- **Add comprehensive metadata**:
+  - Include accurate page titles that reflect the content
+  - Write descriptive meta descriptions (150-160 characters)
+  - Use relevant keywords in meta tags
+  - Add appropriate product tags and categories
+
+- **Optimize Open Graph metadata**:
+  - Include `og:title` and `og:description` tags
+  - Add `og:image` with relevant visuals
+  - Specify `og:type` appropriately
+
+### Examples and Code
+
+- **Label code examples clearly**:
+  - Use descriptive headers for code blocks
+  - Include language identifiers for syntax highlighting
+  - Comment code thoroughly
+
+- **Make examples self-contained**:
+  - Include all necessary imports and dependencies
+  - Explain prerequisites or assumptions
+  - Show complete, working examples where possible
+
+### Testing Your Content
+
+Before publishing, test how your content will appear in search:
+
+1. Check that heading hierarchy is logical and complete
+2. Ensure each section contains sufficient standalone information
+3. Verify that link text is descriptive and contextual
+4. Review content with the indexer's segmentation logic in mind
+
+Following these best practices will ensure your content is optimally indexed, resulting in:
+- More accurate search results
+- Better content segmentation
+- Improved user experience through direct section navigation
+- Higher search relevance and discoverability
+
 ## Development
 
 This project uses:

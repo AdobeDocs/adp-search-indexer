@@ -4,23 +4,75 @@
 
 /**
  * Converts a heading text to a URL-friendly fragment identifier.
+ * Ensures consistent fragment generation for the same content.
  * 
  * @param heading - The heading text to convert
- * @returns A URL-friendly fragment identifier
+ * @returns A URL-friendly fragment identifier starting with #
  */
 export function headingToFragmentId(heading: string): string {
   if (!heading) return '';
   
   return '#' + heading
     .toLowerCase()
-    // Replace commas, periods, slashes and other punctuation with nothing
+    // Strip HTML tags if any remain
+    .replace(/<[^>]+>/g, '')
+    // Remove diacritics/accents
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    // Replace common punctuation with nothing
     .replace(/[,.;:'"!?()[\]{}/\\]/g, '')
-    // Replace spaces, plus signs, and ampersands with hyphens
-    .replace(/[\s+&]+/g, '-')
+    // Replace special characters with hyphens
+    .replace(/[\s+&*%$#@=_|<>^~`]+/g, '-')
     // Remove any consecutive hyphens
     .replace(/-+/g, '-')
     // Remove leading and trailing hyphens
     .replace(/^-+|-+$/g, '');
+}
+
+/**
+ * Normalizes a URL for consistent handling and comparison.
+ * 
+ * @param url - The URL to normalize
+ * @returns A consistently formatted URL
+ */
+export function normalizeUrl(url: string): string {
+  try {
+    const normalized = new URL(url);
+    
+    // Remove trailing slash
+    normalized.pathname = normalized.pathname.replace(/\/+$/, '');
+    
+    // Remove default ports
+    if ((normalized.protocol === 'http:' && normalized.port === '80') ||
+        (normalized.protocol === 'https:' && normalized.port === '443')) {
+      normalized.port = '';
+    }
+    
+    // Remove unnecessary query parameters
+    const cleanParams = new URLSearchParams();
+    normalized.searchParams.forEach((value, key) => {
+      if (!['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'].includes(key)) {
+        cleanParams.append(key, value);
+      }
+    });
+    
+    normalized.search = cleanParams.toString();
+    
+    // Handle fragments consistently
+    if (normalized.hash) {
+      // Make sure fragment starts with # and uses our consistent format
+      const rawFragment = normalized.hash.replace(/^#/, '');
+      if (rawFragment) {
+        normalized.hash = headingToFragmentId(rawFragment);
+      } else {
+        normalized.hash = '';
+      }
+    }
+    
+    return normalized.toString();
+  } catch (e) {
+    // If URL parsing fails, return the original
+    return url;
+  }
 }
 
 /**

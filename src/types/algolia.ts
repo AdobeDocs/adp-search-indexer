@@ -110,15 +110,19 @@ export interface IndexConfig {
 }
 
 /**
- * Result of an indexing operation for a single URL.
+ * Result of an indexing operation.
  */
 export interface IndexingResult {
-  /** URL that was processed */
-  url: string;
-  /** Name of the index where content was stored */
+  /** Name of the index that was updated */
   indexName: string;
-  /** Whether the indexing operation succeeded */
-  success: boolean;
+  /** Number of records processed */
+  recordCount: number;
+  /** Status of the operation: 'success' or 'error' */
+  status: 'success' | 'error';
+  /** Number of records that were updated (only present for success) */
+  updated?: number;
+  /** Number of records that were deleted (only present for success) */
+  deleted?: number;
   /** Optional error information if indexing failed */
   error?: Error;
 }

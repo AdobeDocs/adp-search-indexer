@@ -6,7 +6,8 @@ import { ensureDir } from '../utils/ensure-dir';
 import { join } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import { ProductMappingService } from './product-mapping';
-import { headingToFragmentId } from '../utils/url';
+import { headingToFragmentId, normalizeUrl } from '../utils/url';
+import { normalizeDate, getCurrentTimestamp, isFutureDate, isMoreRecent } from '../utils/dates';
 
 export interface AlgoliaServiceConfig {
   appId: string;
@@ -190,35 +191,6 @@ export class AlgoliaService {
     return this.indices.get(indexName)!;
   }
 
-  private normalizeUrl = (url: string): string => {
-    try {
-      const normalized = new URL(url);
-      // Remove trailing slash
-      normalized.pathname = normalized.pathname.replace(/\/+$/, '');
-      // Remove default ports
-      if ((normalized.protocol === 'http:' && normalized.port === '80') ||
-          (normalized.protocol === 'https:' && normalized.port === '443')) {
-        normalized.port = '';
-      }
-      // Remove unnecessary query parameters
-      const cleanParams = new URLSearchParams();
-      normalized.searchParams.forEach((value, key) => {
-        if (!['utm_source', 'utm_medium', 'utm_campaign'].includes(key)) {
-          cleanParams.append(key, value);
-        }
-      });
-      normalized.search = cleanParams.toString();
-      return normalized.toString();
-    } catch (e) {
-      return url; // Return original if URL is invalid
-    }
-  };
-
-  private generateObjectId = (url: string, segment?: string): string => {
-    const input = segment ? `${url}#${segment}` : url;
-    return createHash('md5').update(input).digest('hex');
-  };
-
   private extractMetadata(metadata: Record<string, unknown>): AlgoliaRecord['metadata'] {
     const defaultMetadata = {
       keywords: '',
@@ -247,70 +219,251 @@ export class AlgoliaService {
     };
   }
 
+  /**
+   * Creates a better description from content by finding natural sentence breaks
+   * and ensuring appropriate length.
+   */
+  private createBetterDescription(content: string): string {
+    if (!content || content.length <= 160) {
+      return content;
+    }
+    
+    // Try to find a sentence break around 120-160 characters
+    const sentenceBreakMatch = content.match(/^.{120,160}[.!?]/);
+    if (sentenceBreakMatch) {
+      return sentenceBreakMatch[0];
+    }
+    
+    // Otherwise, try to break at a word boundary
+    const truncated = content.substring(0, 157);
+    const lastSpaceIndex = truncated.lastIndexOf(' ');
+    
+    if (lastSpaceIndex > 100) {
+      // Add ellipsis to indicate truncation
+      return truncated.substring(0, lastSpaceIndex) + '...';
+    }
+    
+    // If no good breaking point found, just truncate with ellipsis
+    return truncated + '...';
+  }
+
+  /**
+   * Simplified hierarchy building that focuses on logical document structure
+   * based on heading levels. Creates a consistent, gap-free hierarchy.
+   */
+  private buildHierarchyFromSegment(segment: ContentSegment, content: PageContent): AlgoliaRecord['hierarchy'] {
+    // Initialize the hierarchy with sensible defaults
+    const hierarchy: AlgoliaRecord['hierarchy'] = {
+      lvl0: content.title || segment.heading || 'Documentation'
+    };
+    
+    // If we don't have a segment or it doesn't have a heading, return the basic hierarchy
+    if (!segment.heading) {
+      return hierarchy;
+    }
+    
+    // Simple approach: directly put the segment heading at the appropriate level based on its HTML level
+    switch (segment.level) {
+      case 1:
+        // H1 is always the top level
+        hierarchy.lvl0 = segment.heading;
+        break;
+      
+      case 2:
+        // For H2, find its parent H1 if available
+        const parentH1 = this.findParentHeading(segment, content.segments, 1);
+        if (parentH1) {
+          hierarchy.lvl0 = parentH1;
+          hierarchy.lvl1 = segment.heading;
+        } else {
+          // If no parent H1, treat this H2 as lvl0 (likely the main heading)
+          hierarchy.lvl0 = segment.heading;
+        }
+        break;
+      
+      case 3:
+        // For H3, try to find its parent H2, then parent H1
+        const parentH2 = this.findParentHeading(segment, content.segments, 2);
+        const topH1 = this.findParentHeading(segment, content.segments, 1);
+        
+        if (parentH2) {
+          // If we have a parent H2, use it and its parent or the document title
+          hierarchy.lvl0 = topH1 || content.title || 'Documentation';
+          hierarchy.lvl1 = parentH2;
+          hierarchy.lvl2 = segment.heading;
+        } else if (topH1) {
+          // If only a parent H1 is found, skip lvl1
+          hierarchy.lvl0 = topH1;
+        } else {
+          // No parents found, use the segment heading at lvl0
+          hierarchy.lvl0 = segment.heading;
+        }
+        break;
+      
+      default:
+        // For H4+ headings, find the best parent headings
+        const h3Parent = this.findParentHeading(segment, content.segments, 3);
+        const h2Parent = this.findParentHeading(segment, content.segments, 2);
+        const h1Parent = this.findParentHeading(segment, content.segments, 1);
+        
+        if (h3Parent && h2Parent) {
+          // Full hierarchy available
+          hierarchy.lvl0 = h1Parent || content.title || 'Documentation';
+          hierarchy.lvl1 = h2Parent;
+          hierarchy.lvl2 = h3Parent;
+        } else if (h2Parent) {
+          // Only H2 parent available
+          hierarchy.lvl0 = h1Parent || content.title || 'Documentation';
+          hierarchy.lvl1 = h2Parent;
+          hierarchy.lvl2 = segment.heading;
+        } else if (h1Parent) {
+          // Only H1 parent available
+          hierarchy.lvl0 = h1Parent;
+          hierarchy.lvl1 = segment.heading;
+        } else {
+          // No parents found
+          hierarchy.lvl0 = content.title || 'Documentation';
+          hierarchy.lvl1 = segment.heading;
+        }
+        break;
+    }
+    
+    return hierarchy;
+  }
+
+  /**
+   * Helper method to find the nearest parent heading of a specific level
+   * that comes before the given segment in the document.
+   */
+  private findParentHeading(
+    segment: ContentSegment, 
+    allSegments: ContentSegment[], 
+    targetLevel: number
+  ): string | null {
+    // Find the index of the current segment
+    const segmentIndex = allSegments.findIndex(
+      s => s.heading === segment.heading && s.level === segment.level
+    );
+    
+    if (segmentIndex <= 0) return null;
+    
+    // Look backward through segments to find the most recent heading of the target level
+    for (let i = segmentIndex - 1; i >= 0; i--) {
+      if (allSegments[i].level === targetLevel) {
+        return allSegments[i].heading;
+      }
+    }
+    
+    return null;
+  }
+
   private createRecordFromSegment = (
     content: PageContent,
     segment: ContentSegment,
-    indexInfo: { indexName: string; productName: string },
-    isFirstSegment: boolean,
+    indexInfo: {
+      indexName: string,
+      productName: string
+    },
+    isMainContent: boolean = false,
     sitemapLastmod?: string,
-    timestamp?: string
+    timestamp?: string,
+    isBaseRecord: boolean = false
   ): AlgoliaRecord => {
-    const url = this.normalizeUrl(content.url);
+    const url = normalizeUrl(content.url);
     const urlObj = new URL(url);
     const path = urlObj.pathname;
     
-    // Generate a fragment from the heading if available
-    let fragment = urlObj.hash || undefined;
-    if (segment.heading) {
-      fragment = headingToFragmentId(segment.heading);
-    }
+    // Ensure fragment starts with #
+    const fragment = segment.heading ? headingToFragmentId(segment.heading) : undefined;
     
+    // Get metadata
     const metadata = content.metadata || {};
-    const extractedMetadata = this.extractMetadata(metadata);
     
-    // Extract and validate metadata fields
+    // Only include essential metadata fields to reduce redundancy
+    const essentialMetadata = {
+      og_title: metadata['og_title'] || content.title || '',
+      og_description: metadata['og_description'] || content.description || '',
+      keywords: '',
+      products: indexInfo.productName,
+      og_image: metadata['og_image'] || ''
+    };
+    
+    // Extract topics and type, with fallbacks
     const topics = metadata['topics'];
     const type = metadata['type'];
     
-    // Determine the best title to use with proper fallbacks
-    const title = isFirstSegment
-      ? content.title || metadata['og_title'] || segment.heading || indexInfo.productName
-      : segment.heading || content.title || metadata['og_title'] || indexInfo.productName;
+    // Build the hierarchy based on the segment
+    const hierarchy = this.buildHierarchyFromSegment(segment, content);
     
-    // Create appropriate description with fallbacks
-    const description = isFirstSegment 
-      ? content.description || metadata['og_description'] || segment.content.slice(0, 200) || ''
-      : segment.content.slice(0, 200) || content.description || metadata['og_description'] || '';
+    // Improved description creation
+    let description: string;
+    if (isMainContent && content.description) {
+      description = content.description;
+    } else if (metadata['og_description']) {
+      description = String(metadata['og_description']);
+    } else {
+      description = this.createBetterDescription(segment.content);
+    }
     
-    return {
+    // Get the current timestamp if not provided
+    const indexedAt = timestamp || getCurrentTimestamp();
+    
+    // Get the lastModified date with proper validation
+    let lastModified = metadata['lastModified'] || sitemapLastmod;
+    
+    // Ensure lastModified is a valid date in the past
+    lastModified = normalizeDate(lastModified);
+    
+    // Check if date is in the future and fix if needed
+    if (isFutureDate(lastModified)) {
+      console.warn(`⚠️ Future date detected in lastModified: ${lastModified}, using current date instead`);
+      lastModified = normalizeDate(new Date());
+    }
+    
+    const record: AlgoliaRecord = {
       objectID: this.generateObjectId(url, segment.heading),
-      url: fragment ? `${urlObj.origin}${path}${fragment}` : url,
+      url,
       path,
       fragment,
-      title,
+      title: segment.heading || content.title || essentialMetadata.og_title,
       content: segment.content,
-      headings: segment.heading ? [segment.heading] : [],
       product: indexInfo.productName,
       indexName: indexInfo.indexName,
-      metadata: extractedMetadata,
-      lastModified: metadata['lastModified'] || sitemapLastmod || new Date().toISOString().split('T')[0],
+      metadata: essentialMetadata,
+      lastModified,
       sourceLastmod: sitemapLastmod,
-      indexedAt: timestamp,
-      hierarchy: this.buildHierarchy(content.headings || []),
+      indexedAt,
+      hierarchy,
       type: typeof type === 'string' ? type : 'unknown',
       topics: Array.isArray(topics) ? topics : [],
-      description: description,
-      structure: {
-        hasHeroSection: false,
-        hasDiscoverBlocks: false,
-        contentTypes: []
-      }
+      headings: [], // Empty default, will be populated for base record
+      description: '' // Empty default, will be populated for base record
     };
+    
+    // Only include headings array in base record to reduce redundancy
+    if (isBaseRecord) {
+      record.headings = content.headings || [];
+      record.description = description;
+      
+      // Only include structure in base record if there's meaningful data
+      const hasHeroSection = content.structure?.hasHeroSection || false;
+      const hasDiscoverBlocks = content.structure?.hasDiscoverBlocks || false;
+      
+      if (hasHeroSection || hasDiscoverBlocks) {
+        record.structure = {
+          hasHeroSection,
+          hasDiscoverBlocks,
+          contentTypes: content.structure?.contentTypes || []
+        };
+      }
+    }
+    
+    return record;
   };
 
   createRecord(content: PageContent, sitemapLastmod?: string): AlgoliaRecord[] {
     console.log(`\n🔄 Creating records for: ${content.url}`);
-    const url = this.normalizeUrl(content.url);
+    const url = normalizeUrl(content.url);
     const urlObj = new URL(url);
     const path = urlObj.pathname;
     const fragment = urlObj.hash || undefined;
@@ -328,15 +481,87 @@ export class AlgoliaService {
     }
 
     const records: AlgoliaRecord[] = [];
-    const timestamp = new Date().toISOString();
+    const timestamp = getCurrentTimestamp();
+    
+    // Minimum content length for a viable segment
+    const MIN_SEGMENT_LENGTH = 80;
+    
+    // Track objectIDs we've already used to prevent duplicates
+    const usedObjectIds = new Set<string>();
+
+    // Create a base record for the whole page without fragment
+    const baseObjectId = this.generateObjectId(url);
+    usedObjectIds.add(baseObjectId);
+    
+    // Generate page title
+    const pageTitle = content.title || 
+                     metadata['og_title'] || 
+                     content.headings[0] || 
+                     indexInfo.productName;
+    
+    // Generate page description
+    const pageDescription = content.description || 
+                           metadata['og_description'] ||
+                           (content.mainContent ? this.createBetterDescription(content.mainContent) : '');
+    
+    // Get the lastModified date with proper validation
+    let lastModified = metadata['lastModified'] || sitemapLastmod;
+    lastModified = normalizeDate(lastModified);
+    
+    // Check if date is in the future and fix if needed
+    if (isFutureDate(lastModified)) {
+      console.warn(`⚠️ Future date detected in lastModified: ${lastModified}, using current date instead`);
+      lastModified = normalizeDate(new Date());
+    }
+    
+    // Create a base segment for the page
+    const baseSegment: ContentSegment = {
+      heading: pageTitle,
+      content: pageDescription,
+      level: 1
+    };
+    
+    // Create the base record using our segment function
+    const baseRecord = this.createRecordFromSegment(
+      content,
+      baseSegment,
+      indexInfo,
+      true,
+      sitemapLastmod,
+      timestamp,
+      true // This is a base record
+    );
+    
+    // Override objectID and fragment
+    baseRecord.objectID = baseObjectId;
+    baseRecord.fragment = undefined;
+    
+    records.push(baseRecord);
+    console.log(`✅ Created base record for ${url}`);
 
     // Create records for each content segment
     (content.segments || []).forEach((segment, index) => {
       // Skip empty or very short content
-      if (!segment.content.trim() || segment.content.length < 20) {
-        console.log(`⚠️  Skipping segment: Too short or empty (${segment.content.length} chars)`);
+      if (!segment.content.trim() || segment.content.length < MIN_SEGMENT_LENGTH) {
+        console.log(`⚠️  Skipping segment: Too short (${segment.content.length} chars)`);
         return;
       }
+      
+      // Generate the objectID
+      const objectID = this.generateObjectId(url, segment.heading);
+      
+      // If we've already used this objectID, make it unique by adding a suffix
+      let uniqueObjectID = objectID;
+      let suffix = 0;
+      
+      while (usedObjectIds.has(uniqueObjectID)) {
+        suffix++;
+        // Add a suffix to make the ID unique
+        uniqueObjectID = `${objectID}_${suffix}`;
+      }
+      
+      // Mark this objectID as used
+      usedObjectIds.add(uniqueObjectID);
 
       const record = this.createRecordFromSegment(
         content,
@@ -344,55 +569,58 @@ export class AlgoliaService {
         indexInfo,
         index === 0,
         sitemapLastmod,
-        timestamp
+        timestamp,
+        false // Not a base record
       );
+      
+      // Override the objectID with our unique one
+      record.objectID = uniqueObjectID;
+      
       records.push(record);
       console.log(`✅ Created record for segment: ${(segment.heading || '').substring(0, 50)}...`);
     });
 
-    // If no segments created records, create one record for the whole page
-    if (records.length === 0 && content.mainContent) {
-      console.log('ℹ️  No segments created, using main content');
+    // If no segment records were created (but we still have the base record)
+    if (records.length === 1 && content.mainContent) {
+      console.log('ℹ️  No segments created, using main content for a detailed record');
       
-      // Improved title fallback logic
-      const title = content.title || 
-                    metadata['og_title'] || 
-                    content.headings[0] || 
-                    indexInfo.productName;
+      // Use the already cleaned content from the PageContent object
+      const mainContent = content.mainContent;
       
-      // Create description with appropriate fallbacks
-      const description = content.description || 
-                         metadata['og_description'] || 
-                         content.mainContent.slice(0, 200) || 
-                         '';
+      // Create a main segment from the content to use with our buildHierarchyFromSegment
+      const mainSegment: ContentSegment = {
+        heading: content.headings[0] || pageTitle,
+        content: mainContent,
+        level: 1
+      };
+      
+      // Generate the objectID (with a suffix to make it different from the base record)
+      const objectID = this.generateObjectId(url, 'main');
+      
+      // Skip if somehow we've already used this objectID
+      if (!usedObjectIds.has(objectID)) {
+        // Track this ID
+        usedObjectIds.add(objectID);
                     
-      records.push({
-        objectID: this.generateObjectId(url),
-        url,
-        path,
-        fragment,
-        title,
-        content: content.mainContent,
-        headings: content.headings[0] ? [content.headings[0]] : [],
-        product: indexInfo.productName,
-        indexName: indexInfo.indexName,
-        metadata: extractedMetadata,
-        lastModified: metadata['lastModified'] || sitemapLastmod || new Date().toISOString().split('T')[0],
-        sourceLastmod: sitemapLastmod,
-        indexedAt: timestamp,
-        hierarchy: this.buildHierarchy(content.headings || []),
-        type: typeof type === 'string' ? type : 'unknown',
-        topics: Array.isArray(topics) ? topics : [],
-        description: description,
-        structure: {
-          hasHeroSection: false,
-          hasDiscoverBlocks: false,
-          contentTypes: []
-        }
-      });
+        const mainRecord = this.createRecordFromSegment(
+          content,
+          mainSegment,
+          indexInfo,
+          true,
+          sitemapLastmod, 
+          timestamp,
+          false // Not a base record (we already have one)
+        );
+        
+        // Override properties
+        mainRecord.objectID = objectID;
+        mainRecord.fragment = fragment;
+        
+        records.push(mainRecord);
+        console.log(`✅ Created detailed record for ${url}`);
+      }
     }
 
-    console.log(`📊 Created ${records.length} records for ${url}`);
     return records;
   }
 
@@ -466,25 +694,36 @@ export class AlgoliaService {
         
         if (partialMode) {
           console.log(`Using partial update mode (force=${forceUpdate})`);
-          await this.partialUpdate(index, indexRecords, forceUpdate);
+          const updateResult = await this.partialUpdate(index, indexRecords, forceUpdate);
+          
+          results.push({
+            indexName,
+            recordCount: indexRecords.length,
+            status: 'success',
+            updated: updateResult.updated, 
+            deleted: updateResult.deleted
+          });
         } else {
           console.log('Using full reindex mode');
           await this.configureIndex(index, indexRecords, indexRecords[0]?.product || '');
+          
+          results.push({
+            indexName,
+            recordCount: indexRecords.length,
+            status: 'success',
+            updated: indexRecords.length,
+            deleted: 0
+          });
         }
         
         console.log(`✅ Successfully configured and saved records to ${indexName}`);
-        results.push({
-          url: '',
-          indexName,
-          success: true
-        });
         stats.successfulIndices++;
       } catch (error) {
         console.error(`❌ Error configuring index ${indexName}:`, error);
         results.push({
-          url: '',
           indexName,
-          success: false,
+          recordCount: indexRecords.length,
+          status: 'error',
           error: error as Error
         });
         stats.errors += indexRecords.length;
@@ -514,7 +753,7 @@ export class AlgoliaService {
   /**
    * Performs a partial update to an Algolia index using timestamp-based comparison.
    * 
-   * This method:
+   * This method uses our improved compareAndSyncRecords function to:
    * 1. Gets all existing records from the index
    * 2. Compares them with new records to identify what needs updating/deleting
    * 3. Only updates records that are newer based on lastmod timestamp
@@ -523,22 +762,23 @@ export class AlgoliaService {
    * @param index The Algolia index to update
    * @param newRecords The new records to add/update in the index
    * @param forceUpdate Whether to force update all records regardless of timestamp
-   * @returns A Promise that resolves when the update is complete
+   * @returns A Promise with the update statistics
    */
-  async partialUpdate(index: SearchIndex, newRecords: AlgoliaRecord[], forceUpdate = false): Promise<void> {
-    // Get all new objectIDs
-    const newRecordsMap = new Map(
-      newRecords.map(record => [record.objectID, record])
-    );
-    
-    // Records to update and delete
-    const recordsToUpdate: AlgoliaRecord[] = [];
-    const objectIDsToDelete: string[] = [];
-    
-    // Add timestamp to all new records
-    const timestamp = new Date().toISOString();
+  async partialUpdate(
+    index: SearchIndex, 
+    newRecords: AlgoliaRecord[], 
+    forceUpdate = false
+  ): Promise<{updated: number, deleted: number}> {
+    // Ensure all dates are normalized and valid before updating
     newRecords.forEach(record => {
-      record.indexedAt = timestamp;
+      // Fix any future dates
+      if (isFutureDate(record.lastModified)) {
+        console.warn(`⚠️ Future date detected in record lastModified: ${record.lastModified}, using current date instead`);
+        record.lastModified = normalizeDate(new Date());
+      }
+      
+      // Update indexedAt timestamp
+      record.indexedAt = getCurrentTimestamp();
     });
     
     console.log('\n📊 Partial update analysis:');
@@ -546,32 +786,99 @@ export class AlgoliaService {
     console.log(`New records: ${newRecords.length}`);
     
     try {
-      // Check if index exists first
-      await index.getSettings();
+      // Get index name and find product mapping
+      const indexName = index.indexName;
+      const indexInfo = this.productMappingService.getIndexForUrl(`https://example.com${indexName}`) || 
+        { indexName, productName: 'unknown' };
       
-      // Get all existing records
-      console.log('Fetching existing records...');
-      let existingRecordsCount = 0;
+      // Use our improved compare and sync method
+      return await this.compareAndSyncRecords(
+        { 
+          indexObj: index, 
+          indexName, 
+          productName: indexInfo.productName 
+        },
+        newRecords,
+        forceUpdate
+      );
+    } catch (error) {
+      console.error(`❌ Error performing partial update:`, error);
+      throw error;
+    }
+  }
+
+  private generateObjectId = (url: string, segment?: string): string => {
+    // Use the normalized URL function from utils/url for better consistency
+    const normalizedUrl = normalizeUrl(url);
+    
+    // If we have a segment, combine it with the URL in a consistent way
+    // Make sure to clean and normalize the segment text
+    const input = segment 
+      ? `${normalizedUrl}#${headingToFragmentId(segment).replace(/^#/, '')}` 
+      : normalizedUrl;
+    
+    // Add a timestamp component to ensure uniqueness when regenerating
+    // This will only make the ID unique during a single generation run, not across runs
+    // But that's sufficient to avoid collisions in a single content object
+    const contextHash = segment ? segment.length.toString(16) : '';
       
-      // Use browse method instead of browseObjects for better typing
-      await index.browseObjects({
-        batch: (hits) => {
-          for (const hit of hits) {
-            existingRecordsCount++;
-            const objectID = hit.objectID as string;
-            const existingRecord = hit as AlgoliaRecord;
+    // Generate MD5 hash of the combined input
+    return createHash('md5').update(`${input}${contextHash}`).digest('hex');
+  };
+
+  private async compareAndSyncRecords(
+    index: {
+      indexObj: SearchIndex,
+      indexName: string,
+      productName: string
+    }, 
+    records: AlgoliaRecord[], 
+    forceUpdate = false
+  ): Promise<{updated: number, deleted: number}> {
+    // Organize new records by objectID for easier lookup
+    const newRecordsMap = new Map<string, AlgoliaRecord>();
+    records.forEach(record => newRecordsMap.set(record.objectID, record));
+    
+    // Initialize counters
+    let existingRecordsCount = 0;
+    const recordsToUpdate: AlgoliaRecord[] = [];
+    const objectIDsToDelete: string[] = [];
+    
+    // Fetch all existing records
+    try {
+      console.log(`\n📥 Fetching existing records for "${index.indexName}"...`);
+      const browser = index.indexObj.browseObjects({
+        batch: existingRecords => {
+          existingRecordsCount += existingRecords.length;
+          
+          existingRecords.forEach(existingRecord => {
+            const objectID = existingRecord.objectID;
             
-            // Check if this record exists in new set
             if (newRecordsMap.has(objectID)) {
               const newRecord = newRecordsMap.get(objectID)!;
               
-              // Update if forced or new content is newer
+              // Use our date utility to safely compare dates - handle type safety
+              const existingRecordDate = 
+                (existingRecord as any).sourceLastmod || 
+                (existingRecord as any).lastModified;
+              const newRecordDate = newRecord.sourceLastmod || newRecord.lastModified;
+              
+              // Update if forced or new content is newer (and not a future date)
               const shouldUpdate = forceUpdate || 
-                !existingRecord.sourceLastmod || 
-                !newRecord.sourceLastmod ||
-                new Date(newRecord.sourceLastmod) > new Date(existingRecord.sourceLastmod);
+                !existingRecordDate || 
+                !newRecordDate ||
+                isMoreRecent(newRecordDate, existingRecordDate);
               
               if (shouldUpdate) {
+                // Ensure the lastModified date is valid (not in the future)
+                if (isFutureDate(newRecord.lastModified)) {
+                  console.warn(`⚠️ Future date detected in record lastModified: ${newRecord.lastModified}, using current date instead`);
+                  newRecord.lastModified = normalizeDate(new Date());
+                }
+                
+                // Ensure indexedAt is current
+                newRecord.indexedAt = getCurrentTimestamp();
+                
                 recordsToUpdate.push(newRecord);
               }
               
@@ -581,9 +888,12 @@ export class AlgoliaService {
               // Record no longer in sitemap, mark for deletion
               objectIDsToDelete.push(objectID);
             }
-          }
+          });
         }
       });
+      
+      // Wait for browsing to complete
+      await browser;
       
       // Add remaining new records (not in existing set)
       recordsToUpdate.push(...newRecordsMap.values());
@@ -596,34 +906,155 @@ export class AlgoliaService {
       
       // Perform operations
       if (objectIDsToDelete.length > 0) {
-        console.log(`\n🗑️  Deleting ${objectIDsToDelete.length} obsolete records from ${index.indexName}`);
-        await index.deleteObjects(objectIDsToDelete);
+        console.log(`\n🗑️  Deleting ${objectIDsToDelete.length} records...`);
+        if (this.testMode === 'none') {
+          await index.indexObj.deleteObjects(objectIDsToDelete);
+        }
       }
       
       if (recordsToUpdate.length > 0) {
-        console.log(`\n📤 Updating ${recordsToUpdate.length} records in ${index.indexName}`);
-        await index.saveObjects(recordsToUpdate);
+        console.log(`\n📤 Updating ${recordsToUpdate.length} records...`);
+        if (this.testMode === 'none') {
+          const response = await index.indexObj.saveObjects(recordsToUpdate);
+          console.log(`  • Task IDs: ${response.taskIDs.length}`);
+          console.log(`  • Object IDs: ${response.objectIDs.length}`);
+        }
       }
+      
+      return {
+        updated: recordsToUpdate.length,
+        deleted: objectIDsToDelete.length
+      };
     } catch (error) {
-      if ((error as any).status === 404) {
-        // Index doesn't exist yet, create it
-        console.log(`Creating new index ${index.indexName} with ${newRecords.length} records`);
-        await index.setSettings(this.getIndexSettings());
-        await index.saveObjects(newRecords);
-      } else {
-        throw error;
-      }
+      console.error(`❌ Error comparing and syncing records:`, error);
+      throw error;
     }
+  };
+
+  /**
+   * Gets an existing Algolia index or creates a new one if it doesn't exist.
+   * 
+   * @param indexName - The name of the index to get or create
+   * @returns The Algolia search index object
+   */
+  private getOrCreateIndex(indexName: string): SearchIndex {
+    if (this.indices.has(indexName)) {
+      return this.indices.get(indexName)!;
+    }
+    
+    // Create a new index
+    console.log(`🆕 Creating new index: ${indexName}`);
+    const index = this.client.initIndex(indexName);
+    this.indices.set(indexName, index);
+    return index;
   }
 
-  private buildHierarchy(headings: string[]): AlgoliaRecord['hierarchy'] {
-    // Filter out empty headings and ensure we always have at least one heading
-    const filteredHeadings = (headings || []).filter(h => h && h.trim().length > 0);
+  /**
+   * Regenerates records from existing content pages, applying all cleanup and improvements.
+   * This is useful when you want to refresh records after making changes to the content processing logic.
+   * 
+   * @param contents Array of page content objects to regenerate records from
+   * @param force Whether to force update all records in Algolia
+   * @returns Promise with results for each index
+   */
+  async regenerateRecords(
+    contents: PageContent[],
+    force = false
+  ): Promise<IndexingResult[]> {
+    console.log(`\n🔄 Regenerating records from ${contents.length} content pages`);
     
-    return {
-      lvl0: filteredHeadings[0] || 'Documentation', // Ensure lvl0 always has a value
-      lvl1: filteredHeadings[1],
-      lvl2: filteredHeadings[2]
-    };
+    // Map to store records by index
+    const recordsByIndex = new Map<string, AlgoliaRecord[]>();
+    
+    // Create records from each content
+    let processedCount = 0;
+    let skippedCount = 0;
+    
+    for (const content of contents) {
+      try {
+        // Get index info for this content
+        const url = normalizeUrl(content.url);
+        const indexInfo = this.getIndexForUrl(url);
+        
+        if (!indexInfo) {
+          console.warn(`⚠️ Skipping content: No index mapping found for ${url}`);
+          skippedCount++;
+          continue;
+        }
+        
+        // Create records from this content
+        const sourceLastmod = content.metadata?.['lastModified'] || 
+                             content.metadata?.['sourceLastmod'] || 
+                             new Date().toISOString();
+        
+        // Generate records with our improved methods
+        const records = this.createRecord(content, sourceLastmod);
+        
+        // Skip if no records were created
+        if (records.length === 0) {
+          console.warn(`⚠️ No records created for ${url}`);
+          skippedCount++;
+          continue;
+        }
+        
+        // Add to the map by index
+        const { indexName } = indexInfo;
+        if (!recordsByIndex.has(indexName)) {
+          recordsByIndex.set(indexName, []);
+        }
+        
+        recordsByIndex.get(indexName)!.push(...records);
+        processedCount++;
+        
+      } catch (error) {
+        console.error(`❌ Error processing content:`, error);
+        skippedCount++;
+      }
+    }
+    
+    // Print stats so far
+    console.log(`\n📊 Processing statistics:`);
+    console.log(`Processed content pages: ${processedCount}`);
+    console.log(`Skipped content pages: ${skippedCount}`);
+    console.log(`Total records generated: ${Array.from(recordsByIndex.values()).flat().length}`);
+    
+    // Synchronize each index with its records
+    const results: IndexingResult[] = [];
+    
+    for (const [indexName, records] of recordsByIndex.entries()) {
+      console.log(`\n🔄 Synchronizing index: ${indexName} (${records.length} records)`);
+      
+      try {
+        // Get or create the index
+        const index = this.getOrCreateIndex(indexName);
+        
+        // Configure and update the index
+        await this.configureIndex(index, records, indexName);
+        
+        // Use our improved partialUpdate method
+        const updateResult = await this.partialUpdate(index, records, force);
+        
+        // Add result to results array
+        results.push({
+          indexName,
+          recordCount: records.length,
+          status: 'success',
+          updated: updateResult.updated,
+          deleted: updateResult.deleted
+        });
+        
+      } catch (error) {
+        console.error(`❌ Error synchronizing index ${indexName}:`, error);
+        
+        results.push({
+          indexName,
+          recordCount: records.length,
+          status: 'error',
+          error: error as Error
+        });
+      }
+    }
+    
+    return results;
   }
 }
