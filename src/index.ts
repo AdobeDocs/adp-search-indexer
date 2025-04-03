@@ -15,7 +15,7 @@ import { parseArgs } from './utils/args';
  *
  * @returns {Promise<void>} A promise that resolves when the application has completed its processing.
  */
-async function main() {
+async function main(): Promise<void> {
   const args = parseArgs();
   const { baseUrl, sitemapUrl, mode, partialIndexing, forceUpdate, indexFilter, testUrl } = args;
 

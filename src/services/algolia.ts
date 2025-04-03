@@ -52,7 +52,7 @@ export class AlgoliaService {
     this.testMode = config.testMode || 'none';
   }
 
-  private log(message: string, type: 'info' | 'warn' | 'error' = 'info', forceShow = false) {
+  private log(message: string, type: 'info' | 'warn' | 'error' = 'info', forceShow = false): void {
     if (this.verbose || forceShow) {
       switch (type) {
         case 'warn':

@@ -88,6 +88,9 @@ export function normalizeUrl(url: string): string {
  * Constructs a complete URL from a record, ensuring that fragment identifiers are preserved.
  *
  * @param record - The AlgoliaRecord containing URL information
+ * @param record.url - The full URL if available 
+ * @param record.path - The path component of the URL
+ * @param record.fragment - The fragment identifier (hash) of the URL
  * @returns The complete URL with fragment if available
  */
 export function constructUrlFromRecord(record: { url?: string; path?: string; fragment?: string }): string {

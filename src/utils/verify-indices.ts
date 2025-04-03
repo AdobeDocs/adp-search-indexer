@@ -24,7 +24,7 @@ const INDICES = [
   'express-add-ons',
 ];
 
-async function verifyAlgoliaIndices(appId: string, apiKey: string) {
+async function verifyAlgoliaIndices(appId: string, apiKey: string): Promise<void> {
   console.log('🔍 Verifying Algolia indices...\n');
 
   const client = algoliasearch(appId, apiKey);
@@ -58,7 +58,7 @@ async function verifyAlgoliaIndices(appId: string, apiKey: string) {
   }
 }
 
-function verifyExportedIndices() {
+function verifyExportedIndices(): void {
   console.log('🔍 Verifying exported indices in indexed-content directory...\n');
 
   const exportDir = 'indexed-content';
@@ -96,9 +96,14 @@ function verifyExportedIndices() {
 }
 
 /**
- *
+ * Verifies Algolia indices or exported index files.
+ * 
+ * Attempts to verify Algolia indices if credentials are available.
+ * Falls back to checking exported index files in the indexed-content directory.
+ * 
+ * @returns A promise that resolves when verification is complete.
  */
-export async function verifyIndices() {
+export async function verifyIndices(): Promise<void> {
   // Load environment variables
   const appId = process.env['ALGOLIA_APP_ID'];
   const apiKey = process.env['ALGOLIA_API_KEY'];

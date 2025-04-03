@@ -73,7 +73,7 @@ const configSchema = z
  *
  * @returns The validated environment configuration.
  */
-const validateEnv = () => {
+const validateEnv = (): z.infer<typeof configSchema> => {
   // Get mode from command line arguments if provided
   const mode = process.argv.includes('--index')
     ? 'index'
