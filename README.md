@@ -9,7 +9,7 @@ This tool enhances the developer.adobe.com search experience by:
 - Processing documentation from multiple Adobe products
 - Creating optimized search records for Algolia
 - Maintaining content hierarchy and relationships
-- Ensuring up-to-date search results
+- Ensuring up-to-date search results using timestamp-based updates
 
 ## Quick Start
 
@@ -39,18 +39,15 @@ npm run export
 npm run verify
 
 # Default mode (partial update with timestamp-based checking)
-npm run partial-update
+npm run index:partial
 
-# Force update (update all records regardless of timestamp)
-npm run force-update
-
-# Full reindex (clear and rebuild indices)
-npm run full-reindex
+# Full reindex (clear and rebuild indices completely)
+npm run index:full
 ```
 
 ## Key Features
 
-- 🚀 High-performance content processing with Node.js and TypeScript
+- 🚀 High-performance content processing with Node.js 22.6.0 and TypeScript
 - 📑 Smart content segmentation for improved search relevance
 - 🔄 Reliable processing with automatic retries
 - 🗂️ Adobe product-based content organization
@@ -77,26 +74,40 @@ npm run full-reindex
    - Preserves records in indices not matched by the sitemap
 
 3. **Search Records**
-   Documentation is processed into search-optimized records:
+   Documentation is processed into search-optimized records with the following structure:
    ```typescript
    interface AlgoliaRecord {
-     objectID: string; // Unique identifier (MD5 hash of URL)
-     url: string; // Documentation URL
-     title: string; // Content title
-     content: string; // Processed content
-     product: string; // Adobe product identifier
-     lastModified: string; // Content modification date
+     objectID: string;       // Unique identifier (MD5 hash of URL)
+     url: string;            // Full URL including fragment identifier
+     path: string;           // URL path component without fragment
+     fragment?: string;      // Fragment identifier (anchor) if any
+     indexName: string;      // Name of the Algolia index
+     title: string;          // Content title
+     description: string;    // Content description
+     content: string;        // Processed content
+     headings: string[];     // Array of headings found in content
+     product: string;        // Adobe product identifier
+     type: string;           // Content type (guide, reference, etc.)
+     topics: string[];       // Array of topic tags
+     lastModified: string;   // Content modification date
      sourceLastmod?: string; // Original sitemap lastmod timestamp
-     indexedAt?: string; // When this record was indexed
-     metadata: {
-       // Enhanced metadata
-       type: string; // e.g., 'api', 'guide', 'reference'
-     };
+     indexedAt?: string;     // When this record was indexed
      hierarchy: {
-       // Documentation structure
-       lvl0?: string; // Product level
-       lvl1?: string; // Category level
-       lvl2?: string; // Page level
+       lvl0: string;         // Top level heading
+       lvl1?: string;        // Second level heading
+       lvl2?: string;        // Third level heading
+     };
+     metadata: {
+       keywords: string;
+       products: string;
+       og_title: string;
+       og_description: string;
+       og_image: string;
+     };
+     structure?: {
+       hasHeroSection: boolean;
+       hasDiscoverBlocks: boolean;
+       contentTypes: string[];
      };
    }
    ```
@@ -115,23 +126,20 @@ The default mode uses timestamp-based partial updates to efficiently keep your A
 - Preserves records in indices not matched by your sitemap
 
 ```bash
-npm run partial-update
-```
-
-### Force Update
-
-Updates all records regardless of timestamps:
-
-```bash
-npm run force-update
+npm run index:partial
 ```
 
 ### Full Reindexing
 
 Performs a complete rebuild of indices matched by your sitemap:
 
+- Clears and rebuilds all matched indices from scratch
+- Updates all records regardless of timestamps
+- Best used when you need to ensure indices are completely refreshed
+- Useful after schema changes or when troubleshooting issues
+
 ```bash
-npm run full-reindex
+npm run index:full
 ```
 
 ### Analysis Only
@@ -152,20 +160,17 @@ npm run export
 
 ## Advanced CLI Options
 
-For more control, you can use the CLI directly with these options:
+For more control, you can use the command line arguments directly with the scripts:
 
 ```bash
 # Test a specific URL
-npm start -- --test-url="https://developer.adobe.com/path/to/test"
+npm run analyze -- --test-url="https://developer.adobe.com/path/to/test"
 
 # Filter to specific indices (comma-separated)
-npm start -- --index --index-filter="photoshop,illustrator"
-
-# Force update specific indices
-npm start -- --index --index-filter="photoshop" --force
+npm run index:partial -- --index-filter="photoshop,illustrator"
 
 # Full reindex of specific indices
-npm start -- --index --index-filter="commerce" --no-partial
+npm run index:full -- --index-filter="commerce"
 ```
 
 ## URL Fragment Handling
@@ -295,4 +300,11 @@ Following these best practices will ensure your content is optimally indexed, re
 
 ## Development
 
-This project uses:
+This project uses Node.js 22.6.0 and TypeScript with the following tools:
+
+- TypeScript for type-safe development
+- tsup for fast bundling and compilation
+- ESLint for code quality and consistency
+- Prettier for consistent code formatting
+
+See the [DEPLOYMENT.md](./DEPLOYMENT.md) file for information on deploying the indexer to production environments.
