@@ -9,6 +9,7 @@ import { ensureDir } from '../utils/ensure-dir';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'crypto';
+import chalk from 'chalk';
 
 interface IndexingStats {
   total: number;
@@ -71,6 +72,11 @@ export class ContentIndexer {
     await ensureDir(this.outputDir);
   }
 
+  private updateProcessedCount(): void {
+    // Only increment the total counter, not the success counter
+    this.stats.total++;
+  }
+
   private updateStats(indexName: string | undefined | null, error?: Error): void {
     this.stats.total++;
     
@@ -118,7 +124,8 @@ export class ContentIndexer {
         console.log(`✓ ${transformedUrl}`);
       }
       
-      this.updateStats(indexInfo.indexName);
+      // Don't update stats with indexName here - we'll update based on actual indexing results later
+      this.updateProcessedCount();
     } catch (error) {
       if (error && typeof error === 'object' && 'type' in error && (error as { type: string }).type === 'skip') {
         this.updateStats(null, new Error((error as { message?: string }).message || 'Skip error'));
@@ -179,7 +186,24 @@ export class ContentIndexer {
         allRecords.push(...records);
       }
       
-      await this.algolia.saveRecords(allRecords);
+      // Get actual indexing results from Algolia
+      const results = await this.algolia.saveRecords(allRecords);
+      
+      // Reset current counts and update based on actual results
+      this.stats.success = 0;
+      this.stats.byIndex = new Map();
+      
+      // Update stats based on what was ACTUALLY indexed
+      for (const result of results) {
+        if (result.status === 'success' && result.updated && result.updated > 0) {
+          // Only count records that were actually updated
+          this.stats.success += result.updated;
+          this.stats.byIndex.set(
+            result.indexName,
+            result.updated
+          );
+        }
+      }
     }
   }
 
@@ -221,17 +245,24 @@ export class ContentIndexer {
   }
 
   private printStats(): void {
+    // Total records that were processed (not necessarily updated)
+    const totalRecords = Array.from(this.recordsByIndex.values())
+      .reduce((sum, records) => sum + records.length, 0);
+      
     if (this.verbose) {
       console.log('\nIndexing Results');
       console.log('=================');
       console.log(`Processed: ${this.stats.total} URLs`);
+      console.log(`Generated: ${totalRecords} records`);
       
       if (this.stats.success > 0) {
-        console.log(`Successfully indexed: ${this.stats.success}`);
+        console.log(`Updated in Algolia: ${this.stats.success} records`);
         console.log('\nBy index:');
         for (const [index, count] of this.stats.byIndex) {
-          console.log(`  • ${index}: ${count}`);
+          console.log(`  • ${index}: ${count} records updated`);
         }
+      } else {
+        console.log('No records needed updating in Algolia');
       }
 
       const failures = [];
@@ -244,22 +275,18 @@ export class ContentIndexer {
         failures.forEach(failure => console.log(`  • ${failure}`));
       }
     } else {
-      // Output one line per index
-      if (this.stats.byIndex.size > 0) {
-        console.log('\nIndex results:');
-        for (const [index, count] of this.stats.byIndex) {
-          console.log(`${index}: ${count} records indexed`);
-        }
-      }
-      
-      // Summary line
-      console.log('\nSummary');
-      console.log(`Processed ${this.stats.total} URLs, ${this.stats.success} indexed successfully`);
+      // Just add a spacing line after the Algolia summary
+      console.log();
+
+      // Final consolidated summary
+      console.log(`${chalk.bold('Final Summary')}`);
+      console.log(`Processed ${chalk.cyan(this.stats.total)} URLs, generated ${chalk.cyan(totalRecords)} records`);
+      console.log(`Updated ${chalk.green(this.stats.success)} records in Algolia`);
       
       // Only show issues if there are any
       const totalIssues = this.stats.notFound + this.stats.noMapping + this.stats.failed;
       if (totalIssues > 0) {
-        console.log(`Issues: ${totalIssues} (${this.stats.notFound} not found, ${this.stats.noMapping} no mapping, ${this.stats.failed} failed)`);
+        console.log(`${chalk.yellow('Issues')}: ${totalIssues} (${this.stats.notFound} not found, ${chalk.yellow(this.stats.noMapping)} no mapping, ${chalk.red(this.stats.failed)} failed)`);
       }
     }
   }
@@ -271,7 +298,7 @@ export class ContentIndexer {
       if (this.verbose) {
         console.log(`\nProcessing ${urls.length} URLs...`);
       } else {
-        console.log(`\nProcessing ${urls.length} URLs from sitemap`);
+        console.log(`\n${chalk.bold('Processing')} ${chalk.cyan(urls.length)} URLs from sitemap`);
       }
       
       await this.processUrls(urls);
@@ -282,7 +309,7 @@ export class ContentIndexer {
       
       this.printStats();
     } catch (error) {
-      console.error('Error running indexer:', error);
+      console.error(chalk.red('Error running indexer:'), error);
       throw error;
     }
   }

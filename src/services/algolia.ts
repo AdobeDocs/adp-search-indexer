@@ -8,6 +8,7 @@ import { writeFile } from 'node:fs/promises';
 import { ProductMappingService } from './product-mapping';
 import { headingToFragmentId, normalizeUrl } from '../utils/url';
 import { normalizeDate, getCurrentTimestamp, isFutureDate, isMoreRecent } from '../utils/dates';
+import chalk from 'chalk';
 
 export interface AlgoliaServiceConfig {
   appId: string;
@@ -161,9 +162,9 @@ export class AlgoliaService {
       }
 
       // Save records
-      this.log(`Saving ${records.length} records to index: ${index.indexName}`, 'info', true);
+      this.log(`Saving ${records.length} records to index: ${index.indexName}`, 'info', this.verbose);
       await algoliaIndex.saveObjects(records);
-      this.log(`✅ Successfully saved ${records.length} records to ${index.indexName}`, 'info', true);
+      this.log(`✅ Successfully saved ${records.length} records to ${index.indexName}`, 'info', this.verbose);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.log(`Failed to configure index: ${message}`, 'error', true);
@@ -739,7 +740,8 @@ export class AlgoliaService {
 
         // Decide on update strategy
         const forceUpdate = process.env['FORCE'] === 'true';
-        const partialUpdate = process.env['PARTIAL'] !== 'false';
+        // If force is true, automatically disable partial mode for more logical behavior
+        const partialUpdate = forceUpdate ? false : process.env['PARTIAL'] !== 'false';
         
         if (this.verbose) {
           if (partialUpdate) {
@@ -757,8 +759,17 @@ export class AlgoliaService {
           summary = await this.compareAndSyncRecords(index, indexRecords, forceUpdate);
         } else {
           // In full reindex mode, configure the index and save all records
+          if (this.verbose) {
+            console.log(`Using existing index: ${indexName}`);
+            console.log(`Saving ${indexRecords.length} records to index: ${indexName}`);
+          }
+          
           await this.configureIndex(index.indexObj, indexRecords, index.productName);
           summary = { updated: indexRecords.length, deleted: 0 };
+          
+          if (this.verbose) {
+            console.log(`✅ Successfully saved ${indexRecords.length} records to ${indexName}`);
+          }
         }
         
         // Save index stats
@@ -781,9 +792,11 @@ export class AlgoliaService {
         
         if (this.verbose) {
           console.log(`✅ Successfully configured and saved records to ${indexName}`);
+        } else {
+          // In non-verbose mode, don't show per-index status - we'll show it in the summary
         }
       } catch (error) {
-        console.error(`❌ Failed to configure index ${indexName}:`, error);
+        console.error(`${chalk.red('✗')} ${chalk.cyan(indexName)}: Error processing ${indexRecords.length} records`, error);
         results.push({
           indexName: indexName,
           recordCount: indexRecords.length,
@@ -812,22 +825,24 @@ export class AlgoliaService {
       }
     } else {
       // Show a consolidated summary at the end with all indices
-      console.log("\nIndex summary:");
+      console.log(`\n${chalk.bold('Index summary:')}`);
       
       // Show one line per index with total records
       for (const [indexName, count] of stats.byIndex) {
         const summary = indexSummary.get(indexName) || { updated: 0, deleted: 0 };
         const total = count;
-        const updateType = summary.updated === total ? "full update" : `partial update (${summary.updated} of ${total})`;
-        console.log(`${indexName}: ${total} records, ${updateType}`);
+        const updateType = summary.updated === total ? 
+          `${chalk.green('full update')}` : 
+          `${chalk.yellow('partial update')} (${summary.updated} of ${total})`;
+        console.log(`${chalk.cyan(indexName)}: ${total} records, ${updateType}`);
       }
       
       // Consolidated final summary
-      console.log(`\nSaved ${stats.total} records across ${stats.successfulIndices} ${stats.successfulIndices === 1 ? 'index' : 'indices'}`);
+      const totalUpdated = Array.from(indexSummary.values()).reduce((sum, stats) => sum + stats.updated, 0);
       
-      // Only show issues if there are any
+      // Skip the redundant Saved message - let the ContentIndexer show the final summary
       if (stats.skipped > 0 || stats.errors > 0 || stats.failedIndices > 0) {
-        console.log(`Issues: ${stats.skipped} skipped, ${stats.errors} errors, ${stats.failedIndices} failed indices`);
+        console.log(`${chalk.yellow('Issues')}: ${stats.skipped} skipped, ${stats.errors} errors, ${stats.failedIndices} failed indices`);
       }
     }
     
