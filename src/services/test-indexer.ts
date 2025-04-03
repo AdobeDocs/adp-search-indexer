@@ -59,10 +59,10 @@ export class TestIndexer {
       
       if (records && records.length > 0) {
         records.forEach(record => this.updateStats(record));
-        console.log(`✅ Successfully processed: ${url.loc} (${records.length} records)`);
+        console.log(`Successfully processed: ${url.loc} (${records.length} records)`);
         return records;
       } else {
-        console.warn(`⚠️ No records created for: ${url.loc}`);
+        console.warn(`No records created for: ${url.loc}`);
         this.updateStats(null);
         return [];
       }
@@ -70,9 +70,9 @@ export class TestIndexer {
       if (error instanceof Error) {
         this.updateStats(null, error);
         if (error.message.includes('Not Found')) {
-          console.warn(`⚠️ Skipping ${url.loc}: Page not found`);
+          console.warn(`Skipping ${url.loc}: Page not found`);
         } else {
-          console.error(`❌ Failed to process ${url.loc}:`, error);
+          console.error(`Failed to process ${url.loc}:`, error);
         }
       }
       return [];
@@ -80,7 +80,7 @@ export class TestIndexer {
   }
 
   async processUrls(urls: SitemapUrl[]): Promise<AlgoliaRecord[]> {
-    console.log('\n📝 Processing URLs');
+    console.log('\nProcessing URLs');
     console.log('================');
     
     const allRecords: AlgoliaRecord[] = [];
@@ -100,20 +100,20 @@ export class TestIndexer {
   }
 
   private printStats(): void {
-    console.log('\n📊 Indexing Statistics');
+    console.log('\nIndexing Statistics');
     console.log('===================');
     console.log(`Total URLs processed: ${this.stats.total}`);
     console.log(`Successfully indexed: ${this.stats.success}`);
     console.log(`Not found (404): ${this.stats.notFound}`);
     console.log(`Failed: ${this.stats.failed}`);
     
-    console.log('\n📈 Product Distribution');
+    console.log('\nProduct Distribution');
     console.log('====================');
     for (const [product, count] of this.stats.products) {
       console.log(`${product}: ${count} pages`);
     }
     
-    console.log('\n🏷️  Content Type Distribution');
+    console.log('\nContent Type Distribution');
     console.log('=========================');
     for (const [type, count] of this.stats.types) {
       console.log(`${type}: ${count} pages`);
@@ -122,19 +122,19 @@ export class TestIndexer {
 
   async run(urls: SitemapUrl[]): Promise<void> {
     try {
-      console.log('🔄 Initializing test indexer...');
+      console.log('Initializing test indexer...');
       
       // Ensure output directory exists
       await ensureDir(this.outputDir);
 
       const records = await this.processUrls(urls);
       
-      console.log('\n💾 Saving records to Algolia and generating test files...');
+      console.log('\nSaving records to Algolia and generating test files...');
       await this.algolia.saveRecords(records);
 
       this.printStats();
     } catch (error) {
-      console.error('❌ Error running test indexer:', error);
+      console.error('Error running test indexer:', error);
     }
   }
 } 

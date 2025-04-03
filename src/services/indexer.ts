@@ -125,40 +125,77 @@ export class ContentIndexer {
         return;
       }
       
+      // Only log errors in verbose mode unless it's a critical error
       console.error(`Failed to process ${url.loc}:`, error);
       this.updateStats(null, error instanceof Error ? error : new Error(String(error)));
     }
   }
 
   async processUrls(urls: SitemapUrl[]): Promise<void> {
-    // Filter out URLs that should be excluded
-    const validUrls = urls.filter(({ loc }) => {
-      try {
-        const url = new URL(loc);
-        return !this.productMapping.shouldExcludePath(url.pathname);
-      } catch (error) {
-        if (this.verbose) {
-          console.warn(`⚠️  Invalid URL: ${loc}`);
-        }
-        return false;
+    // In verbose mode, show the queue configuration
+    if (this.verbose) {
+      console.log(`\nProcessing URLs with concurrency: ${this.queue.concurrency}`);
+    }
+    
+    // Track total progress
+    let processed = 0;
+    const total = urls.length;
+    
+    // Add progress reporting to log every 10% of progress
+    const progressStep = Math.max(1, Math.floor(total / 10));
+    
+    const tasks = urls.map(url => async () => {
+      await this.processUrl(url);
+      
+      // Increment the processed counter
+      processed++;
+      
+      // Report progress only in verbose mode
+      if (this.verbose && processed % progressStep === 0) {
+        const percent = Math.floor((processed / total) * 100);
+        console.log(`Progress: ${processed}/${total} URLs processed (${percent}%)`);
       }
     });
+    
+    await this.queue.addBatch(tasks);
+  }
 
-    const promises: Promise<void>[] = [];
-
-    for (const url of validUrls) {
-      promises.push(
-        this.queue.add(async () => {
-          await this.processUrl(url);
-        })
-      );
+  private async saveAllRecords(): Promise<void> {
+    if (this.recordsByIndex.size === 0) {
+      return;
     }
-
-    await Promise.all(promises);
+    
+    const totalRecords = Array.from(this.recordsByIndex.values())
+      .reduce((sum, records) => sum + records.length, 0);
+    
+    if (!this.verbose) {
+      console.log(`\nProcessing all ${totalRecords} records across ${this.recordsByIndex.size} indices at once`);
+    }
+      
+    // Save to Algolia in a single batch
+    if (this.algolia) {
+      const allRecords: AlgoliaRecord[] = [];
+      for (const records of this.recordsByIndex.values()) {
+        allRecords.push(...records);
+      }
+      
+      await this.algolia.saveRecords(allRecords);
+    }
   }
 
   private async saveIndexedContent(recordsByIndex: Map<string, AlgoliaRecord[]>): Promise<void> {
+    if (recordsByIndex.size === 0) {
+      return;
+    }
+    
     const savedCounts = new Map<string, number>();
+    const totalRecords = Array.from(recordsByIndex.values())
+      .reduce((sum, records) => sum + records.length, 0);
+    
+    // Only log before saving in verbose mode
+    if (this.verbose) {
+      console.log(`\nSaving ${totalRecords} records across ${recordsByIndex.size} indices...`);
+    }
     
     for (const [indexName, records] of recordsByIndex) {
       const indexedContent: IndexedContent = {
@@ -171,57 +208,81 @@ export class ContentIndexer {
       const filePath = join(this.outputDir, `${indexName}-records.json`);
       await writeFile(filePath, JSON.stringify(indexedContent, null, 2));
       
-      // Save to Algolia
-      if (this.algolia) {
-        console.log(`\n📤 Saving ${records.length} records to Algolia index: ${indexName}`);
-        await this.algolia.saveRecords(records);
-      }
-      
       // Track the number of records saved for each index
       savedCounts.set(indexName, (savedCounts.get(indexName) || 0) + records.length);
     }
 
-    // Log a single consolidated message for each index
+    // Log a single consolidated message for saved content
     if (this.verbose) {
       for (const [indexName, count] of savedCounts) {
-        console.log(`✅ Saved ${count} records for ${indexName}`);
+        console.log(`Saved ${count} records for ${indexName}`);
       }
     }
   }
 
   private printStats(): void {
-    console.log('\n📊 Indexing Results');
-    console.log('=================');
-    console.log(`Processed: ${this.stats.total} URLs`);
-    
-    if (this.stats.success > 0) {
-      console.log(`✓ Successfully indexed: ${this.stats.success}`);
-      if (this.verbose) {
+    if (this.verbose) {
+      console.log('\nIndexing Results');
+      console.log('=================');
+      console.log(`Processed: ${this.stats.total} URLs`);
+      
+      if (this.stats.success > 0) {
+        console.log(`Successfully indexed: ${this.stats.success}`);
         console.log('\nBy index:');
         for (const [index, count] of this.stats.byIndex) {
           console.log(`  • ${index}: ${count}`);
         }
       }
-    }
 
-    const failures = [];
-    if (this.stats.notFound > 0) failures.push(`404 Not Found: ${this.stats.notFound}`);
-    if (this.stats.noMapping > 0) failures.push(`No mapping: ${this.stats.noMapping}`);
-    if (this.stats.failed > 0) failures.push(`Failed: ${this.stats.failed}`);
-    
-    if (failures.length > 0) {
-      console.log('\nIssues:');
-      failures.forEach(failure => console.log(`  • ${failure}`));
+      const failures = [];
+      if (this.stats.notFound > 0) failures.push(`404 Not Found: ${this.stats.notFound}`);
+      if (this.stats.noMapping > 0) failures.push(`No mapping: ${this.stats.noMapping}`);
+      if (this.stats.failed > 0) failures.push(`Failed: ${this.stats.failed}`);
+      
+      if (failures.length > 0) {
+        console.log('\nIssues:');
+        failures.forEach(failure => console.log(`  • ${failure}`));
+      }
+    } else {
+      // Output one line per index
+      if (this.stats.byIndex.size > 0) {
+        console.log('\nIndex results:');
+        for (const [index, count] of this.stats.byIndex) {
+          console.log(`${index}: ${count} records indexed`);
+        }
+      }
+      
+      // Summary line
+      console.log('\nSummary');
+      console.log(`Processed ${this.stats.total} URLs, ${this.stats.success} indexed successfully`);
+      
+      // Only show issues if there are any
+      const totalIssues = this.stats.notFound + this.stats.noMapping + this.stats.failed;
+      if (totalIssues > 0) {
+        console.log(`Issues: ${totalIssues} (${this.stats.notFound} not found, ${this.stats.noMapping} no mapping, ${this.stats.failed} failed)`);
+      }
     }
   }
 
   async run(urls: SitemapUrl[]): Promise<void> {
     try {
       await this.initialize();
+      
+      if (this.verbose) {
+        console.log(`\nProcessing ${urls.length} URLs...`);
+      } else {
+        console.log(`\nProcessing ${urls.length} URLs from sitemap`);
+      }
+      
       await this.processUrls(urls);
+      
+      // In non-verbose mode, don't show the intermediate processing messages
+      // Just save all records at once at the end
+      await this.saveAllRecords();
+      
       this.printStats();
     } catch (error) {
-      console.error('❌ Error running indexer:', error);
+      console.error('Error running indexer:', error);
       throw error;
     }
   }

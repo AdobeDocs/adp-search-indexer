@@ -11,7 +11,8 @@ const EXCLUDED_PATHS = [
   '/internal/',
   '/test/',
   '/assets/',
-  '/_reference/'
+  '/_reference/',
+  '/github-actions-test/'  // Skip test content from github actions
 ];
 
 export interface IndexMatch {
@@ -136,7 +137,7 @@ export class ProductMappingService {
     this.activeIndices = new Set(indices.map((i: string) => i.toLowerCase()));
     
     if (this.verbose) {
-      console.log(`🔍 Filtering to ${this.activeIndices.size} indices: ${Array.from(this.activeIndices).join(', ')}`);
+      console.log(`Filtering to ${this.activeIndices.size} indices: ${Array.from(this.activeIndices).join(', ')}`);
     }
     
     // Clear any cached matches as they might not be valid after filtering
@@ -169,7 +170,7 @@ export class ProductMappingService {
     // Check if this is a path we should exclude
     if (this.shouldExcludePath(pathWithoutFragment)) {
       if (this.verbose) {
-        console.log(`🚫 Skipping excluded path: ${pathWithoutFragment}`);
+        console.log(`Skipping excluded path: ${pathWithoutFragment}`);
       }
       return null;
     }
@@ -188,7 +189,7 @@ export class ProductMappingService {
     const matches: Match[] = [];
     
     if (this.verbose) {
-      console.log(`\n🔍 Finding match for path: ${cleanPath}`);
+      console.log(`\nFinding match for path: ${cleanPath}`);
     }
     
     for (const product of this.productMappings) {
@@ -251,11 +252,12 @@ export class ProductMappingService {
   }
 
   /**
-   * Analyzes the sitemap URLs to determine product mapping matches and logs summary information.
-   *
-   * @param urls - An array of SitemapUrl objects to analyze.
+   * Analyzes URLs to determine matching product indices and provides statistics.
+   * 
+   * @param urls The URLs to analyze
+   * @param verbose Whether to show verbose output
    */
-  analyzeUrlMatches(urls: SitemapUrl[]): void {
+  analyzeUrlMatches(urls: SitemapUrl[], verbose = false): void {
     const matchStats = new Map<string, {
       total: number;
       matched: number;
@@ -277,11 +279,13 @@ export class ProductMappingService {
       )
     );
 
-    // First list skip patterns
-    console.log('\n🚫 URLs will be skipped if they contain:');
-    EXCLUDED_PATHS.forEach(path => {
-      console.log(`  • ${path}`);
-    });
+    // Show excluded paths only in verbose mode
+    if (this.verbose || verbose) {
+      console.log('\n🚫 URLs will be skipped if they contain:');
+      EXCLUDED_PATHS.forEach(path => {
+        console.log(`  • ${path}`);
+      });
+    }
 
     // Analyze URLs
     for (const url of urls) {
@@ -317,55 +321,61 @@ export class ProductMappingService {
       }
     }
 
-    // Print summary stats
-    console.log('\n📈 URL Analysis:');
-    console.log(`Total URLs found: ${urls.length}`);
-    console.log(`URLs to be indexed: ${totalMatched}`);
-    console.log(`URLs to be skipped: ${totalSkipped}`);
-    console.log(`URLs with no matches: ${totalNoMatch}`);
-
-    // Only show per-index breakdown in verbose mode
-    if (this.verbose && totalMatched > 0) {
-      console.log('\nBreakdown by index:');
-      for (const [indexName, stats] of matchStats) {
-        if (stats.matched > 0) {
-          console.log(`  • ${indexName}: ${stats.matched} URLs`);
+    // Print summary stats based on verbosity level
+    if (this.verbose || verbose) {
+      // Detailed stats for verbose mode
+      console.log('\nURL Analysis:');
+      console.log(`Total URLs found: ${urls.length}`);
+      console.log(`URLs to be indexed: ${totalMatched}`);
+      console.log(`URLs to be skipped: ${totalSkipped}`);
+      console.log(`URLs with no matches: ${totalNoMatch}`);
+      
+      // Per-index breakdown
+      if (totalMatched > 0) {
+        console.log('\nBreakdown by index:');
+        for (const [indexName, stats] of matchStats) {
+          if (stats.matched > 0) {
+            console.log(`  • ${indexName}: ${stats.matched} URLs`);
+          }
         }
       }
-    }
+      
+      // Recommendations for unmapped paths
+      if (unmappedPaths.size > 0) {
+        console.log('\nRecommended indices to consider:');
+        const recommendations = Array.from(unmappedPaths.entries())
+          .filter(([path, count]) => {
+            // Filter out paths we know should be excluded
+            if (path === '/nav' || path === '/fragments' || path === '/blocks' || 
+                path === '/drafts' || path === '/tools' || path === '/internal' || 
+                path === '/test' || path === '/assets' || path === '/github-actions-test') {
+              return false;
+            }
+            // Only recommend paths with more than one URL
+            return count > 1;
+          })
+          .sort((a, b) => b[1] - a[1]);
 
-    // Show recommended indices if there are unmapped paths
-    if (unmappedPaths.size > 0) {
-      console.log('\n💡 Recommended indices to consider:');
-      const recommendations = Array.from(unmappedPaths.entries())
-        .filter(([path, count]) => {
-          // Filter out paths we know should be excluded
-          if (path === '/nav' || path === '/fragments' || path === '/blocks' || 
-              path === '/drafts' || path === '/tools' || path === '/internal' || 
-              path === '/test' || path === '/assets') {
-            return false;
-          }
-          // Only recommend paths with more than one URL
-          return count > 1;
-        })
-        .sort((a, b) => b[1] - a[1]); // Sort by count descending
-
-      if (recommendations.length > 0) {
-        recommendations.forEach(([path, count]) => {
-          // Generate suggested name without franklin prefix
-          const suggestedName = path.replace('/', '').replace(/-/g, '-');
-          
-          // Check for conflicts with existing indices (case insensitive)
-          const isConflict = existingIndices.has(suggestedName.toLowerCase());
-          
-          console.log(
-            `  • ${path}/* (${count} URLs) → Suggested index: ${suggestedName}` + 
-            (isConflict ? ' ⚠️ Conflicts with existing index' : '')
-          );
-        });
-      } else {
-        console.log('  No recommendations - all unmapped paths are expected to be excluded');
+        if (recommendations.length > 0) {
+          recommendations.forEach(([path, count]) => {
+            // Generate suggested name without franklin prefix
+            const suggestedName = path.replace('/', '').replace(/-/g, '-');
+            
+            // Check for conflicts with existing indices (case insensitive)
+            const isConflict = existingIndices.has(suggestedName.toLowerCase());
+            
+            console.log(
+              `  • ${path}/* (${count} URLs) → Suggested index: ${suggestedName}` + 
+              (isConflict ? ' Conflicts with existing index' : '')
+            );
+          });
+        } else {
+          console.log('  No recommendations - all unmapped paths are expected to be excluded');
+        }
       }
+    } else {
+      // Ultra-concise single line for non-verbose mode
+      console.log(`URLs: ${totalMatched} matched, ${totalSkipped} skipped, ${totalNoMatch} unmatched`);
     }
   }
 

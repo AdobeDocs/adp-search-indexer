@@ -64,7 +64,7 @@ export class AlgoliaService {
     if (this.testMode === 'none') return;
 
     if (this.testMode === 'console') {
-      console.log(`\n📝 Test Data for ${indexName}:`);
+      console.log(`\nTest Data for ${indexName}:`);
       console.log(JSON.stringify(data, null, 2));
       return;
     }
@@ -77,7 +77,7 @@ export class AlgoliaService {
       const filePath = join(outputDir, fileName);
       
       await writeFile(filePath, JSON.stringify(data, null, 2));
-      this.log(`💾 Saved test data to ${filePath}`, 'info', true);
+      this.log(`Saved test data to ${filePath}`, 'info', true);
     } catch (error) {
       this.log(`Failed to save test data: ${error}`, 'error', true);
     }
@@ -191,6 +191,11 @@ export class AlgoliaService {
     return this.indices.get(indexName)!;
   }
 
+  /**
+   * Extracts and normalizes metadata from content.
+   * @deprecated This method is maintained for backward compatibility but not actively used.
+   */
+  // @ts-ignore: method is kept for future reference
   private extractMetadata(metadata: Record<string, unknown>): AlgoliaRecord['metadata'] {
     const defaultMetadata = {
       keywords: '',
@@ -462,18 +467,16 @@ export class AlgoliaService {
   };
 
   createRecord(content: PageContent, sitemapLastmod?: string): AlgoliaRecord[] {
-    console.log(`\n🔄 Creating records for: ${content.url}`);
+    // Only log in verbose mode or if it's a test URL
+    if (this.verbose) {
+      console.log(`\n🔄 Creating records for: ${content.url}`);
+    }
+    
     const url = normalizeUrl(content.url);
     const urlObj = new URL(url);
-    const path = urlObj.pathname;
     const fragment = urlObj.hash || undefined;
     const indexInfo = this.getIndexForUrl(url);
     const metadata = content.metadata || {};
-    const extractedMetadata = this.extractMetadata(metadata);
-    
-    // Extract and validate metadata fields
-    const topics = metadata['topics'];
-    const type = metadata['type'];
     
     if (!indexInfo) {
       console.warn('❌ Skipping: No index mapping found');
@@ -537,13 +540,17 @@ export class AlgoliaService {
     baseRecord.fragment = undefined;
     
     records.push(baseRecord);
-    console.log(`✅ Created base record for ${url}`);
+    if (this.verbose) {
+      console.log(`✅ Created base record for ${url}`);
+    }
 
     // Create records for each content segment
     (content.segments || []).forEach((segment, index) => {
       // Skip empty or very short content
       if (!segment.content.trim() || segment.content.length < MIN_SEGMENT_LENGTH) {
-        console.log(`⚠️  Skipping segment: Too short (${segment.content.length} chars)`);
+        if (this.verbose) {
+          console.log(`⚠️  Skipping segment: Too short (${segment.content.length} chars)`);
+        }
         return;
       }
       
@@ -577,12 +584,16 @@ export class AlgoliaService {
       record.objectID = uniqueObjectID;
       
       records.push(record);
-      console.log(`✅ Created record for segment: ${(segment.heading || '').substring(0, 50)}...`);
+      if (this.verbose) {
+        console.log(`✅ Created record for segment: ${(segment.heading || '').substring(0, 50)}...`);
+      }
     });
 
     // If no segment records were created (but we still have the base record)
     if (records.length === 1 && content.mainContent) {
-      console.log('ℹ️  No segments created, using main content for a detailed record');
+      if (this.verbose) {
+        console.log('ℹ️  No segments created, using main content for a detailed record');
+      }
       
       // Use the already cleaned content from the PageContent object
       const mainContent = content.mainContent;
@@ -617,7 +628,9 @@ export class AlgoliaService {
         mainRecord.fragment = fragment;
         
         records.push(mainRecord);
-        console.log(`✅ Created detailed record for ${url}`);
+        if (this.verbose) {
+          console.log(`✅ Created detailed record for ${url}`);
+        }
       }
     }
 
@@ -634,119 +647,190 @@ export class AlgoliaService {
       failedIndices: 0
     };
 
-    console.log('\n🔍 Debug: Starting record processing');
-    console.log(`Total records received: ${records.length}`);
+    // Only show starting message in verbose mode
+    if (this.verbose) {
+      console.log('\n🔍 Debug: Starting record processing');
+      console.log(`Total records received: ${records.length}`);
+    }
 
-    // First, group records by index
+    // Group records by index
     const recordsByIndex = new Map<string, AlgoliaRecord[]>();
     
     // Group and validate records
     for (const record of records) {
-      console.log(`\n📄 Processing record:`);
-      console.log(`URL: ${record.url}`);
-      console.log(`Current Index Name: ${record.indexName}`);
-      console.log(`Record Content Length: ${record.content.length}`);
-      console.log(`Record Title: ${record.title}`);
-      console.log(`Record Product: ${record.product}`);
+      // Only show detailed per-record logs in verbose mode
+      if (this.verbose) {
+        console.log(`\n📄 Processing record:`);
+        console.log(`URL: ${record.url}`);
+        console.log(`Current Index Name: ${record.indexName}`);
+        console.log(`Record Content Length: ${record.content.length}`);
+        console.log(`Record Title: ${record.title}`);
+        console.log(`Record Product: ${record.product}`);
+      }
       
       const indexInfo = this.getIndexForUrl(record.url);
       
       if (!indexInfo) {
-        console.log(`⚠️  No index mapping found for URL: ${record.url}`);
+        // Show errors only in verbose mode unless critical
+        if (this.verbose) {
+          console.warn(`❌ Skipping: No index mapping found for URL: ${record.url}`);
+        }
         stats.skipped++;
         continue;
       }
 
-      console.log(`✓ Found index mapping:`);
-      console.log(`  • Index Name: ${indexInfo.indexName}`);
-      console.log(`  • Product: ${indexInfo.productName}`);
+      // Only log detailed match info in verbose mode
+      if (this.verbose) {
+        console.log(`✓ Found index mapping:`);
+        console.log(`  • Index Name: ${indexInfo.indexName}`);
+        console.log(`  • Product: ${indexInfo.productName}`);
+      }
 
       const { indexName } = indexInfo;
       if (!recordsByIndex.has(indexName)) {
-        console.log(`Creating new record group for index: ${indexName}`);
+        // Only log new record group in verbose mode
+        if (this.verbose) {
+          console.log(`Creating new record group for index: ${indexName}`);
+        }
         recordsByIndex.set(indexName, []);
       }
       recordsByIndex.get(indexName)!.push(record);
       stats.byIndex.set(indexName, (stats.byIndex.get(indexName) || 0) + 1);
     }
 
-    console.log('\n📊 Record grouping summary:');
-    for (const [indexName, indexRecords] of recordsByIndex) {
-      console.log(`${indexName}: ${indexRecords.length} records`);
-    }
-
-    // Process each index
-    const results: IndexingResult[] = [];
-
-    // Get app config to determine if using partial mode
-    const partialMode = process.env['PARTIAL'] !== 'false';
-    const forceUpdate = process.env['FORCE'] === 'true';
-
-    for (const [indexName, indexRecords] of recordsByIndex) {
-      console.log(`\n🔄 Configuring index: ${indexName}`);
-      console.log(`Records to index: ${indexRecords.length}`);
-      console.log('Sample record:');
-      console.log(JSON.stringify(indexRecords[0], null, 2));
-      
-      try {
-        console.log('Getting index instance...');
-        const index = this.getIndex(indexName);
-        
-        if (partialMode) {
-          console.log(`Using partial update mode (force=${forceUpdate})`);
-          const updateResult = await this.partialUpdate(index, indexRecords, forceUpdate);
-          
-          results.push({
-            indexName,
-            recordCount: indexRecords.length,
-            status: 'success',
-            updated: updateResult.updated, 
-            deleted: updateResult.deleted
-          });
-        } else {
-          console.log('Using full reindex mode');
-          await this.configureIndex(index, indexRecords, indexRecords[0]?.product || '');
-          
-          results.push({
-            indexName,
-            recordCount: indexRecords.length,
-            status: 'success',
-            updated: indexRecords.length,
-            deleted: 0
-          });
-        }
-        
-        console.log(`✅ Successfully configured and saved records to ${indexName}`);
-        stats.successfulIndices++;
-      } catch (error) {
-        console.error(`❌ Error configuring index ${indexName}:`, error);
-        results.push({
-          indexName,
-          recordCount: indexRecords.length,
-          status: 'error',
-          error: error as Error
-        });
-        stats.errors += indexRecords.length;
-        stats.failedIndices++;
+    // Detailed record grouping summary in verbose mode only
+    if (this.verbose) {
+      console.log('\n📊 Record grouping summary:');
+      for (const [indexName, indexRecords] of recordsByIndex) {
+        console.log(`${indexName}: ${indexRecords.length} records`);
       }
     }
 
-    // Print final stats
-    console.log('\n📈 Final Indexing Statistics');
-    console.log('=========================');
-    console.log(`Total records processed: ${stats.total}`);
-    console.log(`Records skipped: ${stats.skipped}`);
-    console.log(`Records with errors: ${stats.errors}`);
-    console.log(`Successful indices: ${stats.successfulIndices}`);
-    console.log(`Failed indices: ${stats.failedIndices}`);
+    // Process each group of records
+    const results: IndexingResult[] = [];
+    const indexCount = recordsByIndex.size;
+    let currentIndex = 0;
     
-    if (stats.byIndex.size > 0) {
+    // Build a summary of operations to display at the end
+    const indexSummary: Map<string, { recordCount: number, updated: number, deleted: number }> = new Map();
+    
+    // Process all indices
+    for (const [indexName, indexRecords] of recordsByIndex) {
+      currentIndex++;
+      try {
+        // Show detailed info in verbose mode only
+        if (this.verbose) {
+          console.log(`\n🔄 Configuring index: ${indexName}`);
+          console.log(`Records to index: ${indexRecords.length}`);
+          console.log('Sample record:');
+          console.log(JSON.stringify(indexRecords[0], null, 2));
+        }
+        
+        // Get the index
+        if (this.verbose) {
+          console.log('Getting index instance...');
+        }
+        
+        const index = {
+          indexObj: this.getIndex(indexName),
+          indexName: indexName,
+          productName: indexRecords[0].product
+        };
+
+        // Decide on update strategy
+        const forceUpdate = process.env['FORCE'] === 'true';
+        const partialUpdate = process.env['PARTIAL'] !== 'false';
+        
+        if (this.verbose) {
+          if (partialUpdate) {
+            console.log(`Using partial update mode (force=${forceUpdate})`);
+          } else {
+            console.log('Using full reindex mode');
+          }
+        }
+
+        let summary: { updated: number; deleted: number } = { updated: 0, deleted: 0 };
+        
+        // Perform the appropriate indexing strategy
+        if (partialUpdate) {
+          // In partial update mode, compare and sync records
+          summary = await this.compareAndSyncRecords(index, indexRecords, forceUpdate);
+        } else {
+          // In full reindex mode, configure the index and save all records
+          await this.configureIndex(index.indexObj, indexRecords, index.productName);
+          summary = { updated: indexRecords.length, deleted: 0 };
+        }
+        
+        // Save index stats
+        results.push({
+          indexName: indexName,
+          recordCount: indexRecords.length,
+          status: 'success',
+          updated: summary.updated,
+          deleted: summary.deleted
+        });
+        
+        // Save summary for final display
+        indexSummary.set(indexName, {
+          recordCount: indexRecords.length,
+          updated: summary.updated,
+          deleted: summary.deleted
+        });
+        
+        stats.successfulIndices++;
+        
+        if (this.verbose) {
+          console.log(`✅ Successfully configured and saved records to ${indexName}`);
+        }
+      } catch (error) {
+        console.error(`❌ Failed to configure index ${indexName}:`, error);
+        results.push({
+          indexName: indexName,
+          recordCount: indexRecords.length,
+          status: 'error',
+          error: error instanceof Error ? error : new Error(String(error))
+        });
+        
+        stats.failedIndices++;
+        stats.errors += indexRecords.length;
+      }
+    }
+    
+    // Only show detailed stats in verbose mode
+    if (this.verbose) {
+      console.log('\nFinal Indexing Statistics');
+      console.log('=========================');
+      console.log(`Total records processed: ${stats.total}`);
+      console.log(`Records skipped: ${stats.skipped}`);
+      console.log(`Records with errors: ${stats.errors}`);
+      console.log(`Successful indices: ${stats.successfulIndices}`);
+      console.log(`Failed indices: ${stats.failedIndices}`);
+      
       console.log('\nBreakdown by index:');
       for (const [indexName, count] of stats.byIndex) {
         console.log(`  • ${indexName}: ${count} records`);
       }
+    } else {
+      // Show a consolidated summary at the end with all indices
+      console.log("\nIndex summary:");
+      
+      // Show one line per index with total records
+      for (const [indexName, count] of stats.byIndex) {
+        const summary = indexSummary.get(indexName) || { updated: 0, deleted: 0 };
+        const total = count;
+        const updateType = summary.updated === total ? "full update" : `partial update (${summary.updated} of ${total})`;
+        console.log(`${indexName}: ${total} records, ${updateType}`);
+      }
+      
+      // Consolidated final summary
+      console.log(`\nSaved ${stats.total} records across ${stats.successfulIndices} ${stats.successfulIndices === 1 ? 'index' : 'indices'}`);
+      
+      // Only show issues if there are any
+      if (stats.skipped > 0 || stats.errors > 0 || stats.failedIndices > 0) {
+        console.log(`Issues: ${stats.skipped} skipped, ${stats.errors} errors, ${stats.failedIndices} failed indices`);
+      }
     }
-
+    
     return results;
   }
 
@@ -846,7 +930,11 @@ export class AlgoliaService {
     
     // Fetch all existing records
     try {
-      console.log(`\n📥 Fetching existing records for "${index.indexName}"...`);
+      // Only show detailed logs in verbose mode
+      if (this.verbose) {
+        console.log(`\n📥 Fetching existing records for "${index.indexName}"...`);
+      }
+      
       const browser = index.indexObj.browseObjects({
         batch: existingRecords => {
           existingRecordsCount += existingRecords.length;
@@ -898,35 +986,41 @@ export class AlgoliaService {
       // Add remaining new records (not in existing set)
       recordsToUpdate.push(...newRecordsMap.values());
       
-      // Log stats
-      console.log(`\n📊 Index "${index.indexName}" update summary:`);
-      console.log(`  • Existing records: ${existingRecordsCount}`);
-      console.log(`  • Records to update: ${recordsToUpdate.length}`);
-      console.log(`  • Records to delete: ${objectIDsToDelete.length}`);
+      // Log stats based on verbosity level and only if there are changes
+      if (this.verbose) {
+        console.log(`\n📊 Index "${index.indexName}" update summary:`);
+        console.log(`  • Existing records: ${existingRecordsCount}`);
+        console.log(`  • Records to update: ${recordsToUpdate.length}`);
+        console.log(`  • Records to delete: ${objectIDsToDelete.length}`);
+      }
       
-      // Perform operations
+      // Perform operations without additional logging in non-verbose mode
       if (objectIDsToDelete.length > 0) {
-        console.log(`\n🗑️  Deleting ${objectIDsToDelete.length} records...`);
+        if (this.verbose) {
+          console.log(`\n🗑️  Deleting ${objectIDsToDelete.length} records...`);
+        }
         if (this.testMode === 'none') {
           await index.indexObj.deleteObjects(objectIDsToDelete);
         }
       }
       
       if (recordsToUpdate.length > 0) {
-        console.log(`\n📤 Updating ${recordsToUpdate.length} records...`);
+        if (this.verbose) {
+          console.log(`\n📤 Updating ${recordsToUpdate.length} records...`);
+        }
         if (this.testMode === 'none') {
           const response = await index.indexObj.saveObjects(recordsToUpdate);
-          console.log(`  • Task IDs: ${response.taskIDs.length}`);
-          console.log(`  • Object IDs: ${response.objectIDs.length}`);
+          // Only show detailed task IDs in verbose mode
+          if (this.verbose) {
+            console.log(`  • Task IDs: ${response.taskIDs.length}`);
+            console.log(`  • Object IDs: ${response.objectIDs.length}`);
+          }
         }
       }
       
-      return {
-        updated: recordsToUpdate.length,
-        deleted: objectIDsToDelete.length
-      };
+      return { updated: recordsToUpdate.length, deleted: objectIDsToDelete.length };
     } catch (error) {
-      console.error(`❌ Error comparing and syncing records:`, error);
+      console.error(`❌ Failed to sync records for ${index.indexName}:`, error);
       throw error;
     }
   };

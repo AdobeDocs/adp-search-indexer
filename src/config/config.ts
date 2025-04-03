@@ -26,9 +26,9 @@ try {
     }
   }
   
-  console.log('✅ Loaded environment variables from .env file');
+  console.log('Loaded environment variables from .env file');
 } catch (error) {
-  console.warn('⚠️ No .env file found or error loading it:', error);
+  console.warn('No .env file found or error loading it:', error);
 }
 
 const configSchema = z.object({

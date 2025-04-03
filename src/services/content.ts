@@ -618,11 +618,69 @@ export async function fetchPageContent(url: string): Promise<PageContent> {
       contentTypes: Array.from(new Set($main.find('[class]').map((_, el) => $(el).attr('class')).get())),
     };
 
-    if (segments.length === 0 && mainContent.length < 100) {
+    // Log warnings or errors for failed fetches but don't fail the entire process
+    if (!response) {
+      console.warn(`No response for URL: ${url}`);
+      return {
+        url,
+        title: '',
+        content: '',
+        mainContent: '',
+        description: '',
+        segments: [],
+        metadata: {},
+        headings: [],
+        structure: { hasHeroSection: false, hasDiscoverBlocks: false, contentTypes: [] }
+      };
+    }
+
+    if (response.status === 404) {
+      console.warn(`Not found (404): ${url}`);
+      return {
+        url,
+        title: '',
+        content: '',
+        mainContent: '',
+        description: '',
+        segments: [],
+        metadata: {},
+        headings: [],
+        structure: { hasHeroSection: false, hasDiscoverBlocks: false, contentTypes: [] }
+      };
+    }
+
+    if (!response.ok) {
+      console.warn(`Failed to fetch content for ${url}: ${response.status} ${response.statusText}`);
+      return {
+        url,
+        title: '',
+        content: '',
+        mainContent: '',
+        description: '',
+        segments: [],
+        metadata: {},
+        headings: [],
+        structure: { hasHeroSection: false, hasDiscoverBlocks: false, contentTypes: [] }
+      };
+    }
+
+    // Check if we found meaningful content (only warn for non-nav pages)
+    if (mainContent.trim().length < 100) {
       // Only warn about no content if it's not a navigation page
       if (!url.endsWith('/nav')) {
-        console.warn(`⚠️  No meaningful content found for ${url}`);
+        console.warn(`No meaningful content found for ${url}`);
       }
+      return {
+        url,
+        title,
+        content: '',
+        mainContent: '',
+        description,
+        segments: [],
+        metadata,
+        headings,
+        structure
+      };
     }
 
     return {
@@ -693,7 +751,11 @@ export const analyzeSamplePages = async (urls: SitemapUrl[]): Promise<void> => {
   if (verbose) {
     console.log('\nAnalyzing sample pages from each section:');
     console.log('=======================================\n');
+  } else {
+    console.log('\nAnalyzing sample pages...');
   }
+  
+  let analyzedCount = 0;
   
   // Analyze a sample from each section
   for (const [, sectionUrls] of sections) {
@@ -707,6 +769,7 @@ export const analyzeSamplePages = async (urls: SitemapUrl[]): Promise<void> => {
       
       try {
         const content = await queue.add(() => fetchPageContent(url.loc));
+        analyzedCount++;
         
         if (verbose) {
           console.log('Analysis results:');
@@ -717,11 +780,19 @@ export const analyzeSamplePages = async (urls: SitemapUrl[]): Promise<void> => {
           console.log('');
         }
       } catch (error) {
+        // Always show errors, but format them differently based on verbosity
         if (verbose) {
           console.error(`Failed to analyze ${url.loc}:`, error);
+        } else {
+          console.error(`Failed to analyze URL: ${url.loc}`);
         }
       }
     }
+  }
+  
+  // Add a summary message in non-verbose mode
+  if (!verbose) {
+    console.log(`Completed analysis of ${analyzedCount} sample pages\n`);
   }
 };
 
