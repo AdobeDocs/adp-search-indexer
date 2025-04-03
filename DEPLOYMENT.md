@@ -52,6 +52,7 @@ NODE_ENV=production npm run partial-update
 ```
 
 This approach:
+
 - Only updates records for content that has changed
 - Removes records for URLs no longer in the sitemap
 - Preserves existing records that haven't changed
@@ -123,4 +124,4 @@ NODE_ENV=production npm start -- --index --force --verbose
 ## Additional Resources
 
 - [Adobe I/O Runtime Documentation](https://developer.adobe.com/runtime/docs/guides/)
-- [Node.js on Adobe I/O Runtime](https://developer.adobe.com/runtime/docs/guides/reference/runtimes/) 
+- [Node.js on Adobe I/O Runtime](https://developer.adobe.com/runtime/docs/guides/reference/runtimes/)

@@ -8,7 +8,6 @@ import { TaskQueue } from '../utils/queue';
 import { AlgoliaService } from './algolia';
 import { fetchPageContent } from './content';
 
-
 interface IndexingStats {
   total: number;
   success: number;
@@ -46,7 +45,7 @@ export class TestIndexer {
 
   private updateStats(record: AlgoliaRecord | null, error?: Error): void {
     this.stats.total++;
-    
+
     if (record) {
       this.stats.success++;
       this.stats.products.set(record.product, (this.stats.products.get(record.product) || 0) + 1);
@@ -68,9 +67,9 @@ export class TestIndexer {
       console.log(`Processing: ${url.loc}`);
       const content = await fetchPageContent(url.loc);
       const records = this.algolia.createRecord(content);
-      
+
       if (records && records.length > 0) {
-        records.forEach(record => this.updateStats(record));
+        records.forEach((record) => this.updateStats(record));
         console.log(`Successfully processed: ${url.loc} (${records.length} records)`);
         return records;
       } else {
@@ -97,7 +96,7 @@ export class TestIndexer {
   async processUrls(urls: SitemapUrl[]): Promise<AlgoliaRecord[]> {
     console.log('\nProcessing URLs');
     console.log('================');
-    
+
     const allRecords: AlgoliaRecord[] = [];
     const promises: Promise<void>[] = [];
 
@@ -121,13 +120,13 @@ export class TestIndexer {
     console.log(`Successfully indexed: ${this.stats.success}`);
     console.log(`Not found (404): ${this.stats.notFound}`);
     console.log(`Failed: ${this.stats.failed}`);
-    
+
     console.log('\nProduct Distribution');
     console.log('====================');
     for (const [product, count] of this.stats.products) {
       console.log(`${product}: ${count} pages`);
     }
-    
+
     console.log('\nContent Type Distribution');
     console.log('=========================');
     for (const [type, count] of this.stats.types) {
@@ -141,12 +140,12 @@ export class TestIndexer {
   async run(urls: SitemapUrl[]): Promise<void> {
     try {
       console.log('Initializing test indexer...');
-      
+
       // Ensure output directory exists
       await ensureDir(this.outputDir);
 
       const records = await this.processUrls(urls);
-      
+
       console.log('\nSaving records to Algolia and generating test files...');
       await this.algolia.saveRecords(records);
 
@@ -155,4 +154,4 @@ export class TestIndexer {
       console.error('Error running test indexer:', error);
     }
   }
-} 
+}

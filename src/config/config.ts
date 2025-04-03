@@ -9,57 +9,61 @@ import type { Config } from '../types/index';
 try {
   const envPath = resolve(process.cwd(), '.env');
   const envContent = readFileSync(envPath, 'utf8');
-  
+
   // Simple parser for .env files
   const envLines = envContent.split('\n');
   for (const line of envLines) {
     const trimmedLine = line.trim();
-    
+
     // Skip comments and empty lines
     if (!trimmedLine || trimmedLine.startsWith('#')) {
       continue;
     }
-    
+
     const [key, ...valueParts] = trimmedLine.split('=');
     const value = valueParts.join('=');
-    
+
     if (key && value) {
       process.env[key.trim()] = value.trim();
     }
   }
-  
+
   console.log('Loaded environment variables from .env file');
 } catch (error) {
   console.warn('No .env file found or error loading it:', error);
 }
 
-const configSchema = z.object({
-  SITEMAP_URL: z.string().startsWith('/'),
-  BASE_URL: z.string().url(),
-  ALGOLIA_APP_ID: z.string(),
-  ALGOLIA_API_KEY: z.string(),
-  ALGOLIA_INDEX_NAME: z.string().optional(),
-  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
-  BATCH_SIZE: z.coerce.number().default(50),
-  MAX_CONCURRENT_REQUESTS: z.coerce.number().default(5),
-  MODE: z.enum(['index', 'export', 'console']).default('console'),
-  INDEX: z.string().optional(),
-  INDEX_PREFIX: z.string().optional(),
-  PARTIAL: z.coerce.boolean().default(true),
-  PRODUCT_MAPPING_URL: z.string().default('https://raw.githubusercontent.com/AdobeDocs/search-indices/refs/heads/main/product-index-map.json'),
-}).transform(config => {
-  // If we're not in index mode, we don't need Algolia credentials
-  if (config.MODE !== 'index') {
+const configSchema = z
+  .object({
+    SITEMAP_URL: z.string().startsWith('/'),
+    BASE_URL: z.string().url(),
+    ALGOLIA_APP_ID: z.string(),
+    ALGOLIA_API_KEY: z.string(),
+    ALGOLIA_INDEX_NAME: z.string().optional(),
+    LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+    BATCH_SIZE: z.coerce.number().default(50),
+    MAX_CONCURRENT_REQUESTS: z.coerce.number().default(5),
+    MODE: z.enum(['index', 'export', 'console']).default('console'),
+    INDEX: z.string().optional(),
+    INDEX_PREFIX: z.string().optional(),
+    PARTIAL: z.coerce.boolean().default(true),
+    PRODUCT_MAPPING_URL: z
+      .string()
+      .default('https://raw.githubusercontent.com/AdobeDocs/search-indices/refs/heads/main/product-index-map.json'),
+  })
+  .transform((config) => {
+    // If we're not in index mode, we don't need Algolia credentials
+    if (config.MODE !== 'index') {
+      return config;
+    }
+
+    // In index mode, validate Algolia credentials
+    if (!config.ALGOLIA_APP_ID || !config.ALGOLIA_API_KEY) {
+      throw new Error('Algolia credentials (APP_ID, API_KEY) are required in index mode');
+    }
+
     return config;
-  }
-  
-  // In index mode, validate Algolia credentials
-  if (!config.ALGOLIA_APP_ID || !config.ALGOLIA_API_KEY) {
-    throw new Error('Algolia credentials (APP_ID, API_KEY) are required in index mode');
-  }
-  
-  return config;
-});
+  });
 
 /**
  * Validates and parses environment configuration.
@@ -71,23 +75,24 @@ const configSchema = z.object({
  */
 const validateEnv = () => {
   // Get mode from command line arguments if provided
-  const mode = process.argv.includes('--index') 
-    ? 'index' 
-    : process.argv.includes('--export') 
-      ? 'export' 
+  const mode = process.argv.includes('--index')
+    ? 'index'
+    : process.argv.includes('--export')
+      ? 'export'
       : process.env['MODE'] || 'console';
 
   // Get index from command line arguments if provided
-  const index = process.argv.find(arg => arg.startsWith('--index='))?.split('=')[1] || process.env['INDEX'];
+  const index = process.argv.find((arg) => arg.startsWith('--index='))?.split('=')[1] || process.env['INDEX'];
 
   // Get index prefix from command line arguments if provided
-  const indexPrefix = process.argv.find(arg => arg.startsWith('--index-prefix='))?.split('=')[1] || process.env['INDEX_PREFIX'];
+  const indexPrefix =
+    process.argv.find((arg) => arg.startsWith('--index-prefix='))?.split('=')[1] || process.env['INDEX_PREFIX'];
 
   // Get partial flag from command line arguments if provided
-  const partial = process.argv.includes('--no-partial') 
-    ? false 
-    : process.argv.includes('--partial') 
-      ? true 
+  const partial = process.argv.includes('--no-partial')
+    ? false
+    : process.argv.includes('--partial')
+      ? true
       : process.env['PARTIAL'] !== 'false';
 
   // Combine process.env with derived values
@@ -100,7 +105,7 @@ const validateEnv = () => {
   };
 
   const result = configSchema.safeParse(envWithDefaults);
-  
+
   if (!result.success) {
     console.error('❌ Configuration validation failed:');
     const formattedErrors = result.error.format();
@@ -111,7 +116,7 @@ const validateEnv = () => {
     });
     process.exit(1);
   }
-  
+
   return result.data;
 };
 
@@ -143,12 +148,12 @@ validateEnv();
  */
 export const config: Config = {
   sitemap: {
-    url: process.env['SITEMAP_URL'] || ''
+    url: process.env['SITEMAP_URL'] || '',
   },
   algolia: {
     appId: process.env['ALGOLIA_APP_ID'] || '',
     apiKey: process.env['ALGOLIA_API_KEY'] || '',
-    indexName: process.env['ALGOLIA_INDEX_NAME']
+    indexName: process.env['ALGOLIA_INDEX_NAME'],
   },
   app: {
     logLevel: process.env['LOG_LEVEL'] || 'info',
@@ -159,6 +164,8 @@ export const config: Config = {
     index: process.env['INDEX'],
     indexPrefix: process.env['INDEX_PREFIX'],
     partial: process.env['PARTIAL'] === 'true',
-    productMappingUrl: process.env['PRODUCT_MAPPING_URL'] || 'https://raw.githubusercontent.com/AdobeDocs/search-indices/refs/heads/main/product-index-map.json'
-  }
-}; 
+    productMappingUrl:
+      process.env['PRODUCT_MAPPING_URL'] ||
+      'https://raw.githubusercontent.com/AdobeDocs/search-indices/refs/heads/main/product-index-map.json',
+  },
+};

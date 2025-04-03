@@ -2,17 +2,17 @@ import type { ProductIndexMapping, SitemapUrl } from '../types/index';
 
 const EXCLUDED_PATHS = [
   '/nav/',
-  '/nav$',  // Skip paths ending in /nav
+  '/nav$', // Skip paths ending in /nav
   '/fragments/',
   '/blocks/',
   '/drafts/',
   '/tools/',
-  '/tools/sidekick/',  // Skip all sidekick content
+  '/tools/sidekick/', // Skip all sidekick content
   '/internal/',
   '/test/',
   '/assets/',
   '/_reference/',
-  '/github-actions-test/'  // Skip test content from github actions
+  '/github-actions-test/', // Skip test content from github actions
 ];
 
 export interface IndexMatch {
@@ -72,17 +72,17 @@ export class ProductMappingService {
     // First normalize the path
     const normalizedPath = path.replace(/\/$/, '');
 
-    return EXCLUDED_PATHS.some(excludedPath => {
+    return EXCLUDED_PATHS.some((excludedPath) => {
       // Handle exact suffix match for /nav
       if (excludedPath === '/nav$' && normalizedPath.endsWith('/nav')) {
         return true;
       }
-      
+
       // Handle prefix matches for directories
       if (excludedPath.endsWith('/')) {
         return normalizedPath.includes(excludedPath);
       }
-      
+
       // Handle exact matches for other patterns
       return normalizedPath.includes(excludedPath);
     });
@@ -101,21 +101,23 @@ export class ProductMappingService {
       if (!response.ok) {
         throw new Error(`Failed to fetch product mappings: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
       if (!Array.isArray(data)) {
         throw new Error('Product mappings response is not an array');
       }
-      
+
       this.productMappings = data;
-      
+
       // Only log summary in verbose mode
       if (this.verbose) {
         const totalIndices = this.getTotalIndices();
         console.log(`Found ${this.productMappings.length} products with ${totalIndices} indices`);
       }
     } catch (error) {
-      throw new Error(`Failed to initialize product mappings: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to initialize product mappings: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
@@ -125,7 +127,7 @@ export class ProductMappingService {
 
   /**
    * Filters the product mappings to only include specific indices.
-   * 
+   *
    * @param indices - An array of index names to include
    */
   filterIndices(indices: string[]): void {
@@ -135,11 +137,11 @@ export class ProductMappingService {
     }
 
     this.activeIndices = new Set(indices.map((i: string) => i.toLowerCase()));
-    
+
     if (this.verbose) {
       console.log(`Filtering to ${this.activeIndices.size} indices: ${Array.from(this.activeIndices).join(', ')}`);
     }
-    
+
     // Clear any cached matches as they might not be valid after filtering
     this.validMatches.clear();
   }
@@ -159,7 +161,7 @@ export class ProductMappingService {
     // Extract fragment if present
     let fragment = '';
     let pathWithoutFragment = urlPath;
-    
+
     // Check for and extract fragment
     const fragmentIndex = urlPath.indexOf('#');
     if (fragmentIndex !== -1) {
@@ -177,7 +179,7 @@ export class ProductMappingService {
 
     // Clean the URL path (without fragment)
     const cleanPath = pathWithoutFragment.replace(/\/$/, '');
-    
+
     // Find all matching indices
     interface Match {
       product: string;
@@ -187,27 +189,27 @@ export class ProductMappingService {
     }
 
     const matches: Match[] = [];
-    
+
     if (this.verbose) {
       console.log(`\nFinding match for path: ${cleanPath}`);
     }
-    
+
     for (const product of this.productMappings) {
       for (const index of product.productIndices) {
         // Skip indices that are not in the active set, if filtering is enabled
         if (this.activeIndices && !this.activeIndices.has(index.indexName.toLowerCase())) {
           continue;
         }
-        
+
         const cleanPrefix = index.indexPathPrefix.replace(/\/$/, '');
-        
+
         // Check if this path prefix matches the URL exactly
         if (cleanPath === cleanPrefix || cleanPath.startsWith(cleanPrefix + '/')) {
           matches.push({
             product: product.productName,
             index: index.indexName,
             prefix: cleanPrefix,
-            segments: cleanPrefix.split('/').filter(Boolean).length
+            segments: cleanPrefix.split('/').filter(Boolean).length,
           });
         }
       }
@@ -217,53 +219,56 @@ export class ProductMappingService {
     if (matches.length > 0) {
       // Sort by number of segments (most specific first)
       matches.sort((a, b) => b.segments - a.segments);
-      
+
       const bestMatch = matches[0];
       if (this.verbose) {
         console.log(`✨ Best match for ${cleanPath}:`);
         console.log(`   • ${bestMatch.prefix} → ${bestMatch.index}`);
         if (matches.length > 1) {
           console.log('   Alternative matches:');
-          matches.slice(1).forEach(m => {
+          matches.slice(1).forEach((m) => {
             console.log(`     - ${m.prefix} → ${m.index}`);
           });
         }
       }
-      
+
       const match: IndexMatch = {
         indexName: bestMatch.index,
         productName: bestMatch.product,
         pathPrefix: bestMatch.prefix,
         url: urlPath, // Preserve the original URL with fragment
-        fragment: fragment || undefined // Add fragment if present
+        fragment: fragment || undefined, // Add fragment if present
       };
 
       // Cache the match
       this.validMatches.set(urlPath, match);
-      
+
       return match;
     }
 
     if (this.verbose) {
       console.log(`❌ No mapping found for: ${cleanPath}`);
     }
-    
+
     return null;
   }
 
   /**
    * Analyzes URLs to determine matching product indices and provides statistics.
-   * 
+   *
    * @param urls The URLs to analyze
    * @param verbose Whether to show verbose output
    */
   analyzeUrlMatches(urls: SitemapUrl[], verbose = false): void {
-    const matchStats = new Map<string, {
-      total: number;
-      matched: number;
-      excluded: number;
-      urls: string[];
-    }>();
+    const matchStats = new Map<
+      string,
+      {
+        total: number;
+        matched: number;
+        excluded: number;
+        urls: string[];
+      }
+    >();
 
     let totalMatched = 0;
     let totalSkipped = 0;
@@ -271,18 +276,16 @@ export class ProductMappingService {
 
     // Track unmapped paths for analysis
     const unmappedPaths = new Map<string, number>();
-    
+
     // Get existing index names for conflict checking
     const existingIndices = new Set(
-      this.productMappings.flatMap(p => 
-        p.productIndices.map(i => i.indexName.toLowerCase())
-      )
+      this.productMappings.flatMap((p) => p.productIndices.map((i) => i.indexName.toLowerCase()))
     );
 
     // Show excluded paths only in verbose mode
     if (this.verbose || verbose) {
       console.log('\n🚫 URLs will be skipped if they contain:');
-      EXCLUDED_PATHS.forEach(path => {
+      EXCLUDED_PATHS.forEach((path) => {
         console.log(`  • ${path}`);
       });
     }
@@ -290,7 +293,7 @@ export class ProductMappingService {
     // Analyze URLs
     for (const url of urls) {
       const urlPath = new URL(url.loc).pathname;
-      
+
       if (this.shouldExcludePath(urlPath)) {
         totalSkipped++;
         continue;
@@ -303,7 +306,7 @@ export class ProductMappingService {
           total: 0,
           matched: 0,
           excluded: 0,
-          urls: []
+          urls: [],
         };
         stats.matched++;
         if (stats.urls.length < 3) {
@@ -329,7 +332,7 @@ export class ProductMappingService {
       console.log(`URLs to be indexed: ${totalMatched}`);
       console.log(`URLs to be skipped: ${totalSkipped}`);
       console.log(`URLs with no matches: ${totalNoMatch}`);
-      
+
       // Per-index breakdown
       if (totalMatched > 0) {
         console.log('\nBreakdown by index:');
@@ -339,16 +342,24 @@ export class ProductMappingService {
           }
         }
       }
-      
+
       // Recommendations for unmapped paths
       if (unmappedPaths.size > 0) {
         console.log('\nRecommended indices to consider:');
         const recommendations = Array.from(unmappedPaths.entries())
           .filter(([path, count]) => {
             // Filter out paths we know should be excluded
-            if (path === '/nav' || path === '/fragments' || path === '/blocks' || 
-                path === '/drafts' || path === '/tools' || path === '/internal' || 
-                path === '/test' || path === '/assets' || path === '/github-actions-test') {
+            if (
+              path === '/nav' ||
+              path === '/fragments' ||
+              path === '/blocks' ||
+              path === '/drafts' ||
+              path === '/tools' ||
+              path === '/internal' ||
+              path === '/test' ||
+              path === '/assets' ||
+              path === '/github-actions-test'
+            ) {
               return false;
             }
             // Only recommend paths with more than one URL
@@ -360,13 +371,13 @@ export class ProductMappingService {
           recommendations.forEach(([path, count]) => {
             // Generate suggested name without franklin prefix
             const suggestedName = path.replace('/', '').replace(/-/g, '-');
-            
+
             // Check for conflicts with existing indices (case insensitive)
             const isConflict = existingIndices.has(suggestedName.toLowerCase());
-            
+
             console.log(
-              `  • ${path}/* (${count} URLs) → Suggested index: ${suggestedName}` + 
-              (isConflict ? ' Conflicts with existing index' : '')
+              `  • ${path}/* (${count} URLs) → Suggested index: ${suggestedName}` +
+                (isConflict ? ' Conflicts with existing index' : '')
             );
           });
         } else {
@@ -385,9 +396,7 @@ export class ProductMappingService {
    * @returns A Set of unique index names.
    */
   getUniqueIndices(): Set<string> {
-    return new Set(
-      this.productMappings.flatMap(p => p.productIndices.map(i => i.indexName))
-    );
+    return new Set(this.productMappings.flatMap((p) => p.productIndices.map((i) => i.indexName)));
   }
 
   /**
@@ -400,11 +409,11 @@ export class ProductMappingService {
     try {
       const urlPath = new URL(url).pathname;
       const match = this.findBestMatch(urlPath);
-      
+
       if (match) {
         return {
           indexName: match.indexName,
-          productName: match.productName
+          productName: match.productName,
         };
       }
 
@@ -414,4 +423,4 @@ export class ProductMappingService {
       return null;
     }
   }
-} 
+}

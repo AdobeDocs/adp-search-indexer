@@ -21,31 +21,31 @@ async function main() {
 
   // Only show detailed config in verbose mode or when explicilty testing a URL (likely debugging)
   const showDetailedConfig = args.verbose || testUrl;
-  
+
   if (showDetailedConfig) {
     console.log('Configuration');
     console.log('==============');
-    
+
     // Always show core settings
     console.log(`Mode: ${mode}`);
     console.log(`Base URL: ${baseUrl}`);
     console.log(`Sitemap URL: ${sitemapUrl}`);
-    
+
     // Only show more detailed settings in verbose mode
     console.log(`Max Concurrent Requests: ${config.app.maxConcurrentRequests}`);
     console.log(`Batch Size: ${config.app.batchSize}`);
     console.log(`Log Level: ${config.app.logLevel}`);
     console.log(`Partial Indexing: ${partialIndexing ? 'yes' : 'no'}`);
     console.log(`Force Update: ${forceUpdate ? 'yes' : 'no'}`);
-    
+
     if (testUrl) {
       console.log(`Test URL: ${testUrl}`);
     }
-    
+
     if (indexFilter) {
       console.log(`Index Filter: ${indexFilter}`);
     }
-    
+
     if (mode === 'index') {
       console.log(`Algolia Index: ${config.algolia.indexName}`);
       console.log(`Index Prefix: ${config.app.indexPrefix || 'none'}`);
@@ -53,20 +53,22 @@ async function main() {
   } else {
     // In non-verbose mode, show a very simplified config
     console.log(`Mode: ${mode}`);
-    
+
     // Combine flags into a single line
     const flags = [];
     if (partialIndexing) flags.push('partial');
     if (forceUpdate) flags.push('force');
     if (indexFilter) flags.push(`filter: ${indexFilter}`);
-    
+
     if (flags.length > 0) {
       console.log(`Flags: ${flags.join(', ')}`);
     }
-    
+
     // Show minimal Algolia config when in index mode
     if (mode === 'index') {
-      console.log(`Algolia: ${config.algolia.indexName}${config.app.indexPrefix ? ` (prefix: ${config.app.indexPrefix})` : ''}`);
+      console.log(
+        `Algolia: ${config.algolia.indexName}${config.app.indexPrefix ? ` (prefix: ${config.app.indexPrefix})` : ''}`
+      );
     }
   }
 
@@ -74,29 +76,32 @@ async function main() {
     // Initialize services
     const productMappingService = new ProductMappingService(args.verbose);
     await productMappingService.initialize(config.app.productMappingUrl);
-    
+
     // Apply index filter if provided
     if (indexFilter) {
-      const indices = indexFilter.split(',').map(i => i.trim());
+      const indices = indexFilter.split(',').map((i) => i.trim());
       if (args.verbose) {
         console.log(`Filtering to indices: ${indices.join(', ')}`);
       }
       productMappingService.filterIndices(indices);
     }
 
-    const algoliaService = new AlgoliaService({
-      appId: config.algolia.appId,
-      apiKey: config.algolia.apiKey,
-      verbose: args.verbose,
-      testMode: mode === 'console' ? 'console' : mode === 'export' ? 'file' : 'none'
-    }, productMappingService);
-    
+    const algoliaService = new AlgoliaService(
+      {
+        appId: config.algolia.appId,
+        apiKey: config.algolia.apiKey,
+        verbose: args.verbose,
+        testMode: mode === 'console' ? 'console' : mode === 'export' ? 'file' : 'none',
+      },
+      productMappingService
+    );
+
     // If testing a specific URL
     if (testUrl) {
       console.log(`\nTesting specific URL: ${testUrl}`);
       // Create a single URL sitemap entry
       const singleUrl: SitemapUrl = { loc: testUrl };
-      
+
       // Analyze or process just this URL
       if (mode === 'console') {
         await analyzeSitemap([singleUrl], productMappingService);
@@ -108,7 +113,7 @@ async function main() {
           config.app.maxConcurrentRequests,
           args.verbose
         );
-        
+
         const validUrls = await analyzeSitemap([singleUrl], productMappingService, args.verbose);
         await indexer.run(validUrls);
       }
@@ -152,4 +157,4 @@ async function main() {
   }
 }
 
-main(); 
+main();

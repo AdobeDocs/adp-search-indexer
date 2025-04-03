@@ -15,7 +15,7 @@ import { ProductMappingService } from './product-mapping';
  */
 export async function fetchSitemap(baseUrl: string, sitemapPath: string, verbose = false): Promise<SitemapUrl[]> {
   const sitemapUrl = new URL(sitemapPath, baseUrl).toString();
-  
+
   if (verbose) {
     console.log(`Fetching sitemap from: ${sitemapUrl}`);
   }
@@ -27,12 +27,12 @@ export async function fetchSitemap(baseUrl: string, sitemapPath: string, verbose
 
   const xml = await response.text();
   const $ = cheerio.load(xml, { xmlMode: true });
-  
+
   const urls: SitemapUrl[] = [];
   $('url').each((_, element) => {
     const loc = $(element).find('loc').text().trim();
     const lastmod = $(element).find('lastmod').text().trim() || undefined;
-    
+
     if (loc) {
       urls.push({ loc, lastmod });
     }
@@ -54,14 +54,14 @@ export async function fetchSitemap(baseUrl: string, sitemapPath: string, verbose
  * @returns A promise that resolves with the validated URLs array.
  */
 export async function analyzeSitemap(
-  urls: SitemapUrl[], 
+  urls: SitemapUrl[],
   productMappingService: ProductMappingService,
   verbose = false
 ): Promise<SitemapUrl[]> {
   if (verbose) {
     console.log('\nAnalyzing sitemap URLs...');
   }
-  
+
   // Filter out URLs that should be excluded
   const validUrls = urls.filter(({ loc }) => {
     try {
@@ -89,7 +89,9 @@ export async function analyzeSitemap(
         return loc.includes('#');
       } catch (error: unknown) {
         if (verbose) {
-          console.warn(`Error checking for fragments in URL: ${loc}. Error: ${error instanceof Error ? error.message : String(error)}`);
+          console.warn(
+            `Error checking for fragments in URL: ${loc}. Error: ${error instanceof Error ? error.message : String(error)}`
+          );
         }
         return false;
       }
@@ -107,7 +109,9 @@ export async function analyzeSitemap(
           pathSegments.set(firstSegment, (pathSegments.get(firstSegment) || 0) + 1);
         }
       } catch (error: unknown) {
-        console.warn(`Invalid URL for path analysis: ${loc}. Error: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(
+          `Invalid URL for path analysis: ${loc}. Error: ${error instanceof Error ? error.message : String(error)}`
+        );
       }
     });
 
@@ -116,7 +120,7 @@ export async function analyzeSitemap(
     const sortedSegments = Array.from(pathSegments.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 20);
-    
+
     sortedSegments.forEach(([segment, count]) => {
       console.log(`${segment}: ${count} URLs`);
     });
@@ -130,4 +134,4 @@ export async function analyzeSitemap(
 
   // Return the filtered URLs
   return validUrls;
-} 
+}

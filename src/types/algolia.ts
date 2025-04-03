@@ -149,4 +149,4 @@ export interface AlgoliaIndexSettings {
   removeStopWords: boolean;
   /** Whether to enable advanced query syntax */
   advancedSyntax: boolean;
-} 
+}

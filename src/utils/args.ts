@@ -24,7 +24,7 @@ export interface IndexerArgs {
 
 /**
  * Parses command line arguments and environment variables to configure the indexer.
- * 
+ *
  * @returns An IndexerArgs object containing the parsed configuration.
  */
 export function parseArgs(): IndexerArgs {
@@ -32,17 +32,17 @@ export function parseArgs(): IndexerArgs {
     boolean: ['verbose', 'partial', 'force', 'index', 'export', 'test-console'],
     default: {
       verbose: false,
-      partial: true
-    }
+      partial: true,
+    },
   });
-  
+
   // Determine mode from args
   let mode = 'console';
   if (argv['index']) mode = 'index';
   else if (argv['export']) mode = 'export';
   else if (argv['test-console']) mode = 'console';
   else if (argv['mode']) mode = argv['mode'];
-  
+
   return {
     baseUrl: process.env['BASE_URL'] || '',
     sitemapUrl: process.env['SITEMAP_URL'] || '/sitemap.xml',
@@ -51,6 +51,6 @@ export function parseArgs(): IndexerArgs {
     partialIndexing: argv['partial'] !== false, // Default to true unless --no-partial
     forceUpdate: !!argv['force'],
     testUrl: argv['test-url'],
-    indexFilter: argv['index-filter'] || process.env['INDEX'] || undefined
+    indexFilter: argv['index-filter'] || process.env['INDEX'] || undefined,
   };
-} 
+}

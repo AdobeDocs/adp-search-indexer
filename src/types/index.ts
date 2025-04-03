@@ -133,4 +133,4 @@ export interface IndexedContent {
   productName: string;
   /** Array of Algolia records created from the content */
   records: AlgoliaRecord[];
-} 
+}

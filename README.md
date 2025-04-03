@@ -5,6 +5,7 @@ A specialized search indexer for [developer.adobe.com](https://developer.adobe.c
 ## Overview
 
 This tool enhances the developer.adobe.com search experience by:
+
 - Processing documentation from multiple Adobe products
 - Creating optimized search records for Algolia
 - Maintaining content hierarchy and relationships
@@ -13,17 +14,20 @@ This tool enhances the developer.adobe.com search experience by:
 ## Quick Start
 
 1. Install dependencies:
+
 ```bash
 npm install
 ```
 
 2. Configure environment:
+
 ```bash
 cp .env.example .env
 # Edit .env with your configuration
 ```
 
 3. Run the indexer:
+
 ```bash
 # Analyze mode (just analyze, no indexing)
 npm run analyze
@@ -57,6 +61,7 @@ npm run full-reindex
 ## How It Works
 
 1. **Content Processing**
+
    - Fetches content from developer.adobe.com sitemap
    - Extracts `lastmod` timestamps from sitemap entries
    - Segments documentation into searchable chunks
@@ -64,6 +69,7 @@ npm run full-reindex
    - Optimizes content for developer search
 
 2. **Intelligent Updating**
+
    - Uses deterministic MD5 hashing to generate consistent object IDs
    - Compares sitemap `lastmod` timestamps with existing records
    - Only updates records when content is newer
@@ -74,18 +80,20 @@ npm run full-reindex
    Documentation is processed into search-optimized records:
    ```typescript
    interface AlgoliaRecord {
-     objectID: string;     // Unique identifier (MD5 hash of URL)
-     url: string;         // Documentation URL
-     title: string;      // Content title
-     content: string;    // Processed content
-     product: string;    // Adobe product identifier
+     objectID: string; // Unique identifier (MD5 hash of URL)
+     url: string; // Documentation URL
+     title: string; // Content title
+     content: string; // Processed content
+     product: string; // Adobe product identifier
      lastModified: string; // Content modification date
      sourceLastmod?: string; // Original sitemap lastmod timestamp
-     indexedAt?: string;    // When this record was indexed
-     metadata: {        // Enhanced metadata
-       type: string;   // e.g., 'api', 'guide', 'reference'
+     indexedAt?: string; // When this record was indexed
+     metadata: {
+       // Enhanced metadata
+       type: string; // e.g., 'api', 'guide', 'reference'
      };
-     hierarchy: {      // Documentation structure
+     hierarchy: {
+       // Documentation structure
        lvl0?: string; // Product level
        lvl1?: string; // Category level
        lvl2?: string; // Page level
@@ -181,6 +189,7 @@ The system breaks down large pages into smaller, more focused segments:
 5. When users click search results, they go directly to the specific section
 
 This approach has several advantages:
+
 - More precise search results pointing to specific sections
 - Better support for partial indexing with deterministic objectIDs
 - Improved search relevance with more focused content
@@ -205,12 +214,14 @@ The search indexer's effectiveness depends heavily on how content is authored. F
 ### Document Structure
 
 - **Use clear heading hierarchy (H1 → H6)**: Proper heading structure is critical for accurate segmentation
+
   - Start with a single H1 for the page title
   - Use H2 for main sections, H3 for subsections, etc.
   - Avoid skipping heading levels (e.g., going from H2 to H4)
   - Don't use headings solely for styling purposes
 
-- **Keep heading text unique and descriptive**: 
+- **Keep heading text unique and descriptive**:
+
   - Use specific, descriptive headings that clearly indicate the section content
   - Avoid generic headings like "Introduction" or "Overview" for multiple sections
   - Include relevant keywords in headings for better search relevance
@@ -223,11 +234,13 @@ The search indexer's effectiveness depends heavily on how content is authored. F
 ### Content Quality
 
 - **Front-load important information**:
+
   - Place key concepts and terms at the beginning of sections
   - Use descriptive first paragraphs that summarize the section
   - Include relevant keywords naturally in the first few sentences
 
 - **Use descriptive link text**:
+
   - Avoid generic link text like "click here" or "read more"
   - Use keywords that describe the linked content
   - Link text should make sense out of context
@@ -240,6 +253,7 @@ The search indexer's effectiveness depends heavily on how content is authored. F
 ### Metadata
 
 - **Add comprehensive metadata**:
+
   - Include accurate page titles that reflect the content
   - Write descriptive meta descriptions (150-160 characters)
   - Use relevant keywords in meta tags
@@ -253,6 +267,7 @@ The search indexer's effectiveness depends heavily on how content is authored. F
 ### Examples and Code
 
 - **Label code examples clearly**:
+
   - Use descriptive headers for code blocks
   - Include language identifiers for syntax highlighting
   - Comment code thoroughly
@@ -272,6 +287,7 @@ Before publishing, test how your content will appear in search:
 4. Review content with the indexer's segmentation logic in mind
 
 Following these best practices will ensure your content is optimally indexed, resulting in:
+
 - More accurate search results
 - Better content segmentation
 - Improved user experience through direct section navigation

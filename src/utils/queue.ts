@@ -20,7 +20,7 @@ export class TaskQueue {
    */
   async add<T>(task: () => Promise<T>): Promise<T> {
     if (this.running >= this._concurrency) {
-      await new Promise<void>(resolve => {
+      await new Promise<void>((resolve) => {
         this.queue.push(async () => {
           resolve();
         });
@@ -77,4 +77,4 @@ export class TaskQueue {
   get isIdle(): boolean {
     return this.running === 0 && this.queue.length === 0;
   }
-} 
+}
