@@ -1,10 +1,10 @@
-import { fetchSitemap, analyzeSitemap } from './services/sitemap';
-import { ContentIndexer } from './services/indexer';
 import { config } from './config/config';
-import { ProductMappingService } from './services/product-mapping';
 import { AlgoliaService } from './services/algolia';
-import { parseArgs } from './utils/args';
+import { ContentIndexer } from './services/indexer';
+import { ProductMappingService } from './services/product-mapping';
+import { fetchSitemap, analyzeSitemap } from './services/sitemap';
 import type { SitemapUrl } from './types/index';
+import { parseArgs } from './utils/args';
 
 /**
  * Main function that orchestrates the application startup.

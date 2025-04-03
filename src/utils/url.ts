@@ -69,8 +69,9 @@ export function normalizeUrl(url: string): string {
     }
     
     return normalized.toString();
-  } catch (e) {
-    // If URL parsing fails, return the original
+  } catch (error: unknown) {
+    // Log error and return the original URL
+    console.warn(`URL normalization failed for: ${url}. Error: ${error instanceof Error ? error.message : String(error)}`);
     return url;
   }
 }

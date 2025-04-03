@@ -1,6 +1,7 @@
-import algoliasearch from 'algoliasearch';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+
+import algoliasearch from 'algoliasearch';
 
 const INDICES = [
   'express-for-developers',
@@ -94,6 +95,9 @@ function verifyExportedIndices() {
   }
 }
 
+/**
+ *
+ */
 export async function verifyIndices() {
   // Load environment variables
   const appId = process.env['ALGOLIA_APP_ID'];

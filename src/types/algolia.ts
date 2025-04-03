@@ -57,7 +57,7 @@ export interface AlgoliaRecord {
     contentTypes: string[];
   };
   /** Each record can have custom fields for the specific type */
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**

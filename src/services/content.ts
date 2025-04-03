@@ -1,5 +1,6 @@
 import cheerio from 'cheerio';
 import type { Element } from 'domhandler';
+
 import type { SitemapUrl, PageContent, ContentSegment } from '../types/index';
 import { TaskQueue } from '../utils/queue';
 import { retry } from '../utils/retry';
@@ -136,7 +137,7 @@ const cleanContent = (html: string): string => {
     }
     
     // Normalize the sentence for comparison (lowercase, remove punctuation)
-    const normalized = trimmed.toLowerCase().replace(/[.,;:!?()\[\]{}'"]/g, '');
+    const normalized = trimmed.toLowerCase().replace(/[.,;:!?()[\]{}'"]/g, '');
     
     // Skip if it's a duplicate or close variant
     if (seen.has(normalized)) continue;
@@ -251,7 +252,7 @@ const extractSegments = ($: CheerioRoot, $root: ReturnType<CheerioRoot>): Conten
   const hasSections = $content.find('section').length > 3; // Multiple sections usually indicates a structured page
   
   // Find all headings in the document and their positions
-  const headings: Array<{heading: string; level: number; $element: any}> = [];
+  const headings: Array<{heading: string; level: number; $element: ReturnType<typeof $>}> = [];
   
   $content.find('h1, h2, h3, h4, h5, h6').each(function(this: Element) {
     const $heading = $(this);
@@ -569,6 +570,9 @@ const extractSegments = ($: CheerioRoot, $root: ReturnType<CheerioRoot>): Conten
   return uniqueSegments;
 };
 
+/**
+ *
+ */
 export async function fetchPageContent(url: string): Promise<PageContent> {
   try {
     const response = await fetchWithRetry(url);
@@ -700,6 +704,9 @@ export async function fetchPageContent(url: string): Promise<PageContent> {
   }
 }
 
+/**
+ *
+ */
 export async function analyzeContent(url: string): Promise<ContentAnalysis> {
   try {
     const response = await fetchWithRetry(url);

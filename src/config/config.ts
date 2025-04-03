@@ -1,7 +1,9 @@
-import { z } from 'zod';
-import type { Config } from '../types/index';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+
+import { z } from 'zod';
+
+import type { Config } from '../types/index';
 
 // Load environment variables from .env file
 try {
@@ -120,15 +122,15 @@ validateEnv();
  *
  * This object aggregates the validated environment settings to configure the application.
  *
- * @property {Object} sitemap - Contains sitemap-related settings.
+ * @property {object} sitemap - Contains sitemap-related settings.
  * @property {string} sitemap.url - The URL for the sitemap.
  *
- * @property {Object} algolia - Contains Algolia related credentials and settings.
+ * @property {object} algolia - Contains Algolia related credentials and settings.
  * @property {string} algolia.appId - The Algolia application ID.
  * @property {string} algolia.apiKey - The Algolia API key.
  * @property {string} algolia.indexName - The Algolia index name.
  *
- * @property {Object} app - Contains application specific settings.
+ * @property {object} app - Contains application specific settings.
  * @property {string} app.logLevel - The logging level ('debug', 'info', 'warn', 'error').
  * @property {number} app.batchSize - Controls the batch size for processing.
  * @property {number} app.maxConcurrentRequests - Maximum number of concurrent requests.

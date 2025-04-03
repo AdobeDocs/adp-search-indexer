@@ -1,5 +1,7 @@
-import type { SitemapUrl } from '../types/index';
 import cheerio from 'cheerio';
+
+import type { SitemapUrl } from '../types/index';
+
 import { ProductMappingService } from './product-mapping';
 
 /**
@@ -67,9 +69,9 @@ export async function analyzeSitemap(
       // Process pathname without fragments for exclusion check
       const pathname = url.pathname;
       return !productMappingService.shouldExcludePath(pathname);
-    } catch (error) {
+    } catch (error: unknown) {
       if (verbose) {
-        console.warn(`Invalid URL: ${loc}`);
+        console.warn(`Invalid URL: ${loc}. Error: ${error instanceof Error ? error.message : String(error)}`);
       }
       return false;
     }
@@ -85,7 +87,10 @@ export async function analyzeSitemap(
     const urlsWithFragments = validUrls.filter(({ loc }) => {
       try {
         return loc.includes('#');
-      } catch (error) {
+      } catch (error: unknown) {
+        if (verbose) {
+          console.warn(`Error checking for fragments in URL: ${loc}. Error: ${error instanceof Error ? error.message : String(error)}`);
+        }
         return false;
       }
     });
@@ -101,8 +106,8 @@ export async function analyzeSitemap(
           const firstSegment = `/${segments[0]}/`;
           pathSegments.set(firstSegment, (pathSegments.get(firstSegment) || 0) + 1);
         }
-      } catch (error) {
-        console.warn(`Invalid URL: ${loc}`);
+      } catch (error: unknown) {
+        console.warn(`Invalid URL for path analysis: ${loc}. Error: ${error instanceof Error ? error.message : String(error)}`);
       }
     });
 

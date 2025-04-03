@@ -409,8 +409,8 @@ export class ProductMappingService {
       }
 
       return null;
-    } catch (error) {
-      console.warn(`Invalid URL: ${url}`);
+    } catch (error: unknown) {
+      console.warn(`Invalid URL: ${url}. Error: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     }
   }

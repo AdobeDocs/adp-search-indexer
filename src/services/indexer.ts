@@ -1,15 +1,20 @@
-import type { SitemapUrl } from '../types/index';
-import type { AlgoliaRecord } from '../types/algolia';
-import type { PageContent } from '../types/index';
-import { ProductMappingService } from './product-mapping';
-import { AlgoliaService } from './algolia';
-import { fetchPageContent, shouldSegmentContent } from './content';
-import { TaskQueue } from '../utils/queue';
-import { ensureDir } from '../utils/ensure-dir';
+import { createHash } from 'crypto';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createHash } from 'crypto';
+
 import chalk from 'chalk';
+
+import type { AlgoliaRecord } from '../types/algolia';
+import type { SitemapUrl , PageContent } from '../types/index';
+import { ensureDir } from '../utils/ensure-dir';
+import { TaskQueue } from '../utils/queue';
+
+import { AlgoliaService } from './algolia';
+import { fetchPageContent, shouldSegmentContent } from './content';
+import { ProductMappingService } from './product-mapping';
+
+
+
 
 interface IndexingStats {
   total: number;
@@ -31,6 +36,9 @@ interface IndexInfo {
   productName: string;
 }
 
+/**
+ *
+ */
 export class ContentIndexer {
   private productMapping: ProductMappingService;
   private queue: TaskQueue;
@@ -42,6 +50,9 @@ export class ContentIndexer {
   private baseUrl: string;
   private algolia: AlgoliaService;
 
+  /**
+   *
+   */
   constructor(
     mappingUrl: string, 
     baseUrl: string, 
@@ -67,6 +78,9 @@ export class ContentIndexer {
     this.algolia = algolia;
   }
 
+  /**
+   *
+   */
   async initialize(): Promise<void> {
     await this.productMapping.initialize(this.mappingUrl);
     await ensureDir(this.outputDir);
@@ -95,6 +109,9 @@ export class ContentIndexer {
     }
   }
 
+  /**
+   *
+   */
   async processUrl(url: SitemapUrl): Promise<void> {
     try {
       // Transform URL to use our base URL
@@ -138,6 +155,9 @@ export class ContentIndexer {
     }
   }
 
+  /**
+   *
+   */
   async processUrls(urls: SitemapUrl[]): Promise<void> {
     // In verbose mode, show the queue configuration
     if (this.verbose) {
@@ -291,6 +311,9 @@ export class ContentIndexer {
     }
   }
 
+  /**
+   *
+   */
   async run(urls: SitemapUrl[]): Promise<void> {
     try {
       await this.initialize();

@@ -4,6 +4,9 @@ interface RetryOptions {
   shouldRetry?: (error: unknown) => boolean;
 }
 
+/**
+ *
+ */
 export async function retry<T>(
   fn: () => Promise<T>,
   options: RetryOptions = {}

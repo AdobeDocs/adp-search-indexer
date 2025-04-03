@@ -39,9 +39,14 @@ export function normalizeDate(date?: string | Date, provideFallback = true): str
     }
     
     return dateObj.toISOString().split('T')[0];
-  } catch (e) {
-    // Return current date as fallback
-    return provideFallback ? new Date().toISOString().split('T')[0] : '';
+  } catch (error: unknown) {
+    // Log the error and return fallback
+    if (provideFallback) {
+      return new Date().toISOString().split('T')[0];
+    } else {
+      console.warn(`Date normalization failed: ${error instanceof Error ? error.message : String(error)}`);
+      return '';
+    }
   }
 }
 
@@ -70,7 +75,8 @@ export function isMoreRecent(date1?: string | Date, date2?: string | Date): bool
     const d2 = new Date(date2);
     
     return d1.getTime() > d2.getTime();
-  } catch (e) {
+  } catch (error: unknown) {
+    console.warn(`Date comparison failed: ${error instanceof Error ? error.message : String(error)}`);
     return false;
   }
 }
@@ -89,7 +95,8 @@ export function isFutureDate(date?: string | Date): boolean {
     const now = new Date();
     
     return checkDate.getTime() > now.getTime();
-  } catch (e) {
+  } catch (error: unknown) {
+    console.warn(`Future date check failed: ${error instanceof Error ? error.message : String(error)}`);
     return false;
   }
 } 

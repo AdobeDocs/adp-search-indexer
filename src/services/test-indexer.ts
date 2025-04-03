@@ -1,10 +1,13 @@
 import { join } from 'node:path';
+
 import type { AlgoliaRecord } from '../types/algolia';
 import type { SitemapUrl } from '../types/index';
-import { fetchPageContent } from './content';
-import { AlgoliaService } from './algolia';
-import { TaskQueue } from '../utils/queue';
 import { ensureDir } from '../utils/ensure-dir';
+import { TaskQueue } from '../utils/queue';
+
+import { AlgoliaService } from './algolia';
+import { fetchPageContent } from './content';
+
 
 interface IndexingStats {
   total: number;
@@ -15,12 +18,18 @@ interface IndexingStats {
   types: Map<string, number>;
 }
 
+/**
+ *
+ */
 export class TestIndexer {
   private algolia: AlgoliaService;
   private queue: TaskQueue;
   private stats: IndexingStats;
   private outputDir: string;
 
+  /**
+   *
+   */
   constructor(algolia: AlgoliaService) {
     this.algolia = algolia;
     this.queue = new TaskQueue(5);
@@ -51,6 +60,9 @@ export class TestIndexer {
     }
   }
 
+  /**
+   *
+   */
   async processUrl(url: SitemapUrl): Promise<AlgoliaRecord[]> {
     try {
       console.log(`Processing: ${url.loc}`);
@@ -79,6 +91,9 @@ export class TestIndexer {
     }
   }
 
+  /**
+   *
+   */
   async processUrls(urls: SitemapUrl[]): Promise<AlgoliaRecord[]> {
     console.log('\nProcessing URLs');
     console.log('================');
@@ -120,6 +135,9 @@ export class TestIndexer {
     }
   }
 
+  /**
+   *
+   */
   async run(urls: SitemapUrl[]): Promise<void> {
     try {
       console.log('Initializing test indexer...');

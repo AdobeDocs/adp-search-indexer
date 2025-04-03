@@ -1,14 +1,19 @@
+import { createHash } from 'crypto';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import algoliasearch, { type SearchClient, type SearchIndex } from 'algoliasearch';
+import chalk from 'chalk';
+
 import type { AlgoliaRecord, IndexingResult, AlgoliaIndexSettings } from '../types/algolia';
 import type { PageContent, ContentSegment } from '../types/index';
-import { createHash } from 'crypto';
-import { ensureDir } from '../utils/ensure-dir';
-import { join } from 'node:path';
-import { writeFile } from 'node:fs/promises';
-import { ProductMappingService } from './product-mapping';
-import { headingToFragmentId, normalizeUrl } from '../utils/url';
 import { normalizeDate, getCurrentTimestamp, isFutureDate, isMoreRecent } from '../utils/dates';
-import chalk from 'chalk';
+import { ensureDir } from '../utils/ensure-dir';
+import { headingToFragmentId, normalizeUrl } from '../utils/url';
+
+import { ProductMappingService } from './product-mapping';
+
+
 
 export interface AlgoliaServiceConfig {
   appId: string;
@@ -39,6 +44,9 @@ export class AlgoliaService {
   private verbose: boolean;
   private testMode: 'none' | 'file' | 'console';
 
+  /**
+   *
+   */
   constructor(config: AlgoliaServiceConfig, productMappingService: ProductMappingService) {
     this.client = algoliasearch(config.appId, config.apiKey);
     this.productMappingService = productMappingService;
@@ -149,7 +157,7 @@ export class AlgoliaService {
         algoliaIndex = index;
         this.log(`Using existing index: ${index.indexName}`, 'info', true);
       } catch (error) {
-        if ((error as any).status === 404) {
+        if ((error as { status?: number }).status === 404) {
           this.log(`Creating new index: ${index.indexName}`, 'info', true);
           algoliaIndex = this.client.initIndex(index.indexName);
           
@@ -196,7 +204,7 @@ export class AlgoliaService {
    * Extracts and normalizes metadata from content.
    * @deprecated This method is maintained for backward compatibility but not actively used.
    */
-  // @ts-ignore: method is kept for future reference
+  // @ts-expect-error: method is kept for future reference but not used
   private extractMetadata(metadata: Record<string, unknown>): AlgoliaRecord['metadata'] {
     const defaultMetadata = {
       keywords: '',
@@ -467,6 +475,9 @@ export class AlgoliaService {
     return record;
   };
 
+  /**
+   *
+   */
   createRecord(content: PageContent, sitemapLastmod?: string): AlgoliaRecord[] {
     // Only log in verbose mode or if it's a test URL
     if (this.verbose) {
@@ -638,6 +649,9 @@ export class AlgoliaService {
     return records;
   }
 
+  /**
+   *
+   */
   async saveRecords(records: AlgoliaRecord[]): Promise<IndexingResult[]> {
     const stats = {
       total: records.length,
@@ -709,7 +723,6 @@ export class AlgoliaService {
 
     // Process each group of records
     const results: IndexingResult[] = [];
-    const indexCount = recordsByIndex.size;
     let currentIndex = 0;
     
     // Build a summary of operations to display at the end
@@ -721,7 +734,7 @@ export class AlgoliaService {
       try {
         // Show detailed info in verbose mode only
         if (this.verbose) {
-          console.log(`\n🔄 Configuring index: ${indexName}`);
+          console.log(`\n🔄 Processing index ${currentIndex}/${recordsByIndex.size}: ${indexName}`);
           console.log(`Records to index: ${indexRecords.length}`);
           console.log('Sample record:');
           console.log(JSON.stringify(indexRecords[0], null, 2));
@@ -836,9 +849,6 @@ export class AlgoliaService {
           `${chalk.yellow('partial update')} (${summary.updated} of ${total})`;
         console.log(`${chalk.cyan(indexName)}: ${total} records, ${updateType}`);
       }
-      
-      // Consolidated final summary
-      const totalUpdated = Array.from(indexSummary.values()).reduce((sum, stats) => sum + stats.updated, 0);
       
       // Skip the redundant Saved message - let the ContentIndexer show the final summary
       if (stats.skipped > 0 || stats.errors > 0 || stats.failedIndices > 0) {
@@ -962,8 +972,8 @@ export class AlgoliaService {
               
               // Use our date utility to safely compare dates - handle type safety
               const existingRecordDate = 
-                (existingRecord as any).sourceLastmod || 
-                (existingRecord as any).lastModified;
+                (existingRecord as { sourceLastmod?: string; lastModified?: string }).sourceLastmod || 
+                (existingRecord as { sourceLastmod?: string; lastModified?: string }).lastModified;
               const newRecordDate = newRecord.sourceLastmod || newRecord.lastModified;
               
               // Update if forced or new content is newer (and not a future date)
