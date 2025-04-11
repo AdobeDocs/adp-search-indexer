@@ -935,6 +935,52 @@ export class AlgoliaService {
     records: AlgoliaRecord[],
     forceUpdate = false
   ): Promise<{ updated: number; deleted: number }> {
+    const { indexName, productName } = index;
+    let { indexObj: algoliaIndex } = index; // Use let to allow reassignment if index is created
+
+    // Check if the index exists BEFORE trying to browse objects
+    try {
+      await algoliaIndex.getSettings();
+      // Index exists, proceed with the original comparison logic below
+      if (this.verbose) {
+        this.log(`Index ${indexName} exists. Proceeding with comparison.`, 'info');
+      }
+    } catch (error) {
+      if ((error as { status?: number }).status === 404) {
+        // Index doesn't exist, create and configure it
+        this.log(`Index ${indexName} not found. Creating and configuring...`, 'info', true);
+        try {
+          algoliaIndex = this.client.initIndex(indexName); // Reassign the index object
+          const settings = this.getIndexSettings();
+          await algoliaIndex.setSettings(settings);
+          this.log(`✅ Successfully configured settings for new index: ${indexName}`, 'info', true);
+
+          // If in test mode, save test data and return
+          if (this.testMode !== 'none') {
+            await this.saveTestData(indexName, { settings, records, productName });
+            this.log(`Test data saved for newly created index ${indexName}. Skipping sync.`, 'info', true);
+            return { updated: 0, deleted: 0 };
+          }
+
+          // Index just created, save all current records directly
+          this.log(`Saving all ${records.length} records to newly created index ${indexName}.`, 'info', this.verbose);
+          const saveResult = await algoliaIndex.saveObjects(records);
+          await algoliaIndex.waitTask(saveResult.taskIDs[0]); // Wait for the save task
+          this.log(`✅ Successfully saved ${records.length} records to new index ${indexName}.`, 'info', true);
+          // Return immediately as there was no comparison
+          return { updated: records.length, deleted: 0 };
+        } catch (configError) {
+          this.log(`❌ Failed to create/configure new index ${indexName}: ${configError}`, 'error', true);
+          throw configError; // Rethrow the error during creation/configuration
+        }
+      } else {
+        // Rethrow unexpected errors during getSettings
+        this.log(`❌ Unexpected error checking index ${indexName}: ${error}`, 'error', true);
+        throw error;
+      }
+    }
+
+    // If we reached here, the index existed. Proceed with the original comparison logic.
     // Organize new records by objectID for easier lookup
     const newRecordsMap = new Map<string, AlgoliaRecord>();
     records.forEach((record) => newRecordsMap.set(record.objectID, record));
@@ -948,10 +994,10 @@ export class AlgoliaService {
     try {
       // Only show detailed logs in verbose mode
       if (this.verbose) {
-        console.log(`\n📥 Fetching existing records for "${index.indexName}"...`);
+        console.log(`\n📥 Fetching existing records for "${indexName}"...`);
       }
 
-      const browser = index.indexObj.browseObjects({
+      const browser = algoliaIndex.browseObjects({
         batch: (existingRecords) => {
           existingRecordsCount += existingRecords.length;
 
@@ -1004,7 +1050,7 @@ export class AlgoliaService {
 
       // Log stats based on verbosity level and only if there are changes
       if (this.verbose) {
-        console.log(`\n📊 Index "${index.indexName}" update summary:`);
+        console.log(`\n📊 Index "${indexName}" update summary:`);
         console.log(`  • Existing records: ${existingRecordsCount}`);
         console.log(`  • Records to update: ${recordsToUpdate.length}`);
         console.log(`  • Records to delete: ${objectIDsToDelete.length}`);
@@ -1016,7 +1062,7 @@ export class AlgoliaService {
           console.log(`\n🗑️  Deleting ${objectIDsToDelete.length} records...`);
         }
         if (this.testMode === 'none') {
-          await index.indexObj.deleteObjects(objectIDsToDelete);
+          await algoliaIndex.deleteObjects(objectIDsToDelete);
         }
       }
 
@@ -1025,7 +1071,7 @@ export class AlgoliaService {
           console.log(`\n📤 Updating ${recordsToUpdate.length} records...`);
         }
         if (this.testMode === 'none') {
-          const response = await index.indexObj.saveObjects(recordsToUpdate);
+          const response = await algoliaIndex.saveObjects(recordsToUpdate);
           // Only show detailed task IDs in verbose mode
           if (this.verbose) {
             console.log(`  • Task IDs: ${response.taskIDs.length}`);
@@ -1036,7 +1082,7 @@ export class AlgoliaService {
 
       return { updated: recordsToUpdate.length, deleted: objectIDsToDelete.length };
     } catch (error) {
-      console.error(`❌ Failed to sync records for ${index.indexName}:`, error);
+      console.error(`❌ Failed to sync records for ${indexName}:`, error);
       throw error;
     }
   }
