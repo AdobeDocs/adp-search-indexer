@@ -35,7 +35,7 @@ try {
 
 const configSchema = z
   .object({
-    SITEMAP_URL: z.string().startsWith('/'),
+    SITEMAP_URL: z.string().url(),
     BASE_URL: z.string().url(),
     ALGOLIA_APP_ID: z.string(),
     ALGOLIA_API_KEY: z.string(),

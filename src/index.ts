@@ -121,7 +121,7 @@ async function main(): Promise<void> {
     }
 
     // Fetch and analyze sitemap
-    const urls = await fetchSitemap(baseUrl, sitemapUrl, args.verbose);
+    const urls = await fetchSitemap(sitemapUrl, args.verbose);
     const validUrls = await analyzeSitemap(urls, productMappingService, args.verbose);
 
     if (mode === 'console') {

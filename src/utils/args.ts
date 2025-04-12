@@ -45,7 +45,7 @@ export function parseArgs(): IndexerArgs {
 
   return {
     baseUrl: process.env['BASE_URL'] || '',
-    sitemapUrl: process.env['SITEMAP_URL'] || '/sitemap.xml',
+    sitemapUrl: process.env['SITEMAP_URL'] || '', // Rely on Zod validation
     mode: mode as 'console' | 'index' | 'export',
     verbose: argv['verbose'],
     partialIndexing: argv['partial'] !== false, // Default to true unless --no-partial

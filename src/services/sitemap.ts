@@ -7,14 +7,12 @@ import { ProductMappingService } from './product-mapping';
 /**
  * Fetches the sitemap XML from the given URL and returns an array of sitemap entries.
  *
- * @param baseUrl - The base URL of the website.
- * @param sitemapPath - The relative or absolute path to the sitemap XML.
+ * @param sitemapUrl - The full URL to the sitemap XML.
  * @param verbose - Optional flag to enable verbose logging.
  * @returns A promise that resolves to an array of SitemapUrl objects.
  * @throws An error if the sitemap cannot be fetched.
  */
-export async function fetchSitemap(baseUrl: string, sitemapPath: string, verbose = false): Promise<SitemapUrl[]> {
-  const sitemapUrl = new URL(sitemapPath, baseUrl).toString();
+export async function fetchSitemap(sitemapUrl: string, verbose = false): Promise<SitemapUrl[]> {
 
   if (verbose) {
     console.log(`Fetching sitemap from: ${sitemapUrl}`);
