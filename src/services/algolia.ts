@@ -16,6 +16,7 @@ import { ProductMappingService } from './product-mapping';
 export interface AlgoliaServiceConfig {
   appId: string;
   apiKey: string;
+  indexPrefix?: string;
   verbose?: boolean;
   testMode?: 'none' | 'file' | 'console';
 }
@@ -38,6 +39,7 @@ interface IndexMatch {
 export class AlgoliaService {
   private client: SearchClient;
   private indices: Map<string, SearchIndex> = new Map();
+  private indexPrefix?: string;
   private productMappingService: ProductMappingService;
   private verbose: boolean;
   private testMode: 'none' | 'file' | 'console';
@@ -47,9 +49,10 @@ export class AlgoliaService {
    */
   constructor(config: AlgoliaServiceConfig, productMappingService: ProductMappingService) {
     this.client = algoliasearch(config.appId, config.apiKey);
+    this.indexPrefix = config.indexPrefix;
     this.productMappingService = productMappingService;
-    this.verbose = config.verbose || false;
-    this.testMode = config.testMode || 'none';
+    this.verbose = config.verbose ?? false;
+    this.testMode = config.testMode ?? 'none';
   }
 
   private log(message: string, type: 'info' | 'warn' | 'error' = 'info', forceShow = false): void {
@@ -67,6 +70,10 @@ export class AlgoliaService {
     }
   }
 
+  private getPrefixedIndexName(baseIndexName: string): string {
+    return this.indexPrefix ? `${this.indexPrefix}${baseIndexName}` : baseIndexName;
+  }
+
   private async saveTestData(
     indexName: string,
     data: { settings: AlgoliaIndexSettings; records: AlgoliaRecord[]; productName: string }
@@ -80,10 +87,12 @@ export class AlgoliaService {
     }
 
     try {
+      const prefixedIndexName = this.getPrefixedIndexName(indexName);
+
       const outputDir = 'indexed-content';
       await ensureDir(outputDir);
 
-      const fileName = `${indexName}.json`;
+      const fileName = `${prefixedIndexName}.json`;
       const filePath = join(outputDir, fileName);
 
       await writeFile(filePath, JSON.stringify(data, null, 2));
@@ -146,10 +155,11 @@ export class AlgoliaService {
       } catch (error) {
         if ((error as { status?: number }).status === 404) {
           this.log(`Creating new index: ${index.indexName}`, 'info', true);
-          algoliaIndex = this.client.initIndex(index.indexName);
+          const prefixedIndexName = this.getPrefixedIndexName(index.indexName);
+          algoliaIndex = this.client.initIndex(prefixedIndexName);
 
           // Configure settings for new index
-          this.log(`Configuring settings for new index: ${index.indexName}`, 'info', true);
+          this.log(`Configuring settings for new index: ${prefixedIndexName}`, 'info', true);
           await algoliaIndex.setSettings(settings);
         } else {
           throw error;
@@ -181,10 +191,11 @@ export class AlgoliaService {
   }
 
   private getIndex(indexName: string): SearchIndex {
-    if (!this.indices.has(indexName)) {
-      this.indices.set(indexName, this.client.initIndex(indexName));
+    const prefixedIndexName = this.getPrefixedIndexName(indexName);
+    if (!this.indices.has(prefixedIndexName)) {
+      this.indices.set(prefixedIndexName, this.client.initIndex(prefixedIndexName));
     }
-    return this.indices.get(indexName)!;
+    return this.indices.get(prefixedIndexName)!;
   }
 
   /**
@@ -950,7 +961,8 @@ export class AlgoliaService {
         // Index doesn't exist, create and configure it
         this.log(`Index ${indexName} not found. Creating and configuring...`, 'info', true);
         try {
-          algoliaIndex = this.client.initIndex(indexName); // Reassign the index object
+          const prefixedIndexName = this.getPrefixedIndexName(indexName);
+          algoliaIndex = this.client.initIndex(prefixedIndexName);
           const settings = this.getIndexSettings();
           await algoliaIndex.setSettings(settings);
           this.log(`✅ Successfully configured settings for new index: ${indexName}`, 'info', true);
@@ -1094,14 +1106,15 @@ export class AlgoliaService {
    * @returns The Algolia search index object
    */
   private getOrCreateIndex(indexName: string): SearchIndex {
-    if (this.indices.has(indexName)) {
-      return this.indices.get(indexName)!;
+    const prefixedIndexName = this.getPrefixedIndexName(indexName);
+    if (this.indices.has(prefixedIndexName)) {
+      return this.indices.get(prefixedIndexName)!;
     }
 
     // Create a new index
-    console.log(`🆕 Creating new index: ${indexName}`);
-    const index = this.client.initIndex(indexName);
-    this.indices.set(indexName, index);
+    console.log(`🆕 Creating new index: ${prefixedIndexName}`);
+    const index = this.client.initIndex(prefixedIndexName);
+    this.indices.set(prefixedIndexName, index);
     return index;
   }
 

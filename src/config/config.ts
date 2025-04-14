@@ -39,7 +39,6 @@ const configSchema = z
     BASE_URL: z.string().url(),
     ALGOLIA_APP_ID: z.string(),
     ALGOLIA_API_KEY: z.string(),
-    ALGOLIA_INDEX_NAME: z.string().optional(),
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
     BATCH_SIZE: z.coerce.number().default(50),
     MAX_CONCURRENT_REQUESTS: z.coerce.number().default(5),
@@ -133,7 +132,6 @@ validateEnv();
  * @property {object} algolia - Contains Algolia related credentials and settings.
  * @property {string} algolia.appId - The Algolia application ID.
  * @property {string} algolia.apiKey - The Algolia API key.
- * @property {string} algolia.indexName - The Algolia index name.
  *
  * @property {object} app - Contains application specific settings.
  * @property {string} app.logLevel - The logging level ('debug', 'info', 'warn', 'error').
@@ -153,7 +151,6 @@ export const config: Config = {
   algolia: {
     appId: process.env['ALGOLIA_APP_ID'] || '',
     apiKey: process.env['ALGOLIA_API_KEY'] || '',
-    indexName: process.env['ALGOLIA_INDEX_NAME'],
   },
   app: {
     logLevel: process.env['LOG_LEVEL'] || 'info',

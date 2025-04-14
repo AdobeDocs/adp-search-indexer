@@ -345,7 +345,9 @@ This section provides guidance for common workflows when using the ADP Search In
   - These are required only when running in `index` mode (`npm run index:partial` or `npm run index:full`).
   - Obtain these from the Algolia dashboard for the relevant Adobe Developer site search application. You'll likely need Admin API Key privileges for indexing operations (creating indices, adding/deleting records, setting settings). Consult with the project maintainers if you need access.
 - **`ALGOLIA_INDEX_NAME`**: (Optional) A base name for indices. If using an `INDEX_PREFIX`, the final index name might be constructed from this prefix and the name defined in the product mapping. Check the Algolia dashboard for existing index naming conventions.
-- **`PRODUCT_MAPPING_URL`**: (Optional) Defaults to the production mapping file hosted on GitHub (`https://raw.githubusercontent.com/AdobeDocs/search-indices/refs/heads/main/product-index-map.json`). You generally don't need to change this unless you are testing changes to the mapping file itself by pointing to a local file path (`file:///path/to/your/local/product-index-map.json`) or a different remote URL.
+- **`PRODUCT_MAPPING_URL`**: (Optional) URL to a JSON file defining how URL paths map to products and specific Algolia index names. Defaults to the main Adobe Docs mapping file. See [Product Mapping](#product-mapping).
+- **`INDEX_PREFIX`**: (Optional) A prefix string added to all index names defined in the product mapping file. Useful for creating separate environments (e.g., `dev_`, `stage_`.
+- **`INDEX`**: (Optional) Specify a single product index name (from the mapping file) to process. If set, only URLs matching this product will be indexed.
 
 ### 2. Indexing Content (Partial Update - Recommended Daily Task)
 
@@ -457,3 +459,7 @@ This project uses Node.js 22.6.0 and TypeScript with the following tools:
 - tsup for fast bundling and compilation
 - ESLint for code quality and consistency
 - Prettier for consistent code formatting
+
+```
+
+```

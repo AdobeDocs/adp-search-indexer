@@ -47,8 +47,8 @@ async function main(): Promise<void> {
     }
 
     if (mode === 'index') {
-      console.log(`Algolia Index: ${config.algolia.indexName}`);
-      console.log(`Index Prefix: ${config.app.indexPrefix || 'none'}`);
+      console.log(`Algolia App ID: ${config.algolia.appId ? 'Configured' : 'Not Configured'}`);
+      console.log(`Index Prefix: ${config.app.indexPrefix || 'None'}`);
     }
   } else {
     // In non-verbose mode, show a very simplified config
@@ -67,7 +67,10 @@ async function main(): Promise<void> {
     // Show minimal Algolia config when in index mode
     if (mode === 'index') {
       console.log(
-        `Algolia: ${config.algolia.indexName}${config.app.indexPrefix ? ` (prefix: ${config.app.indexPrefix})` : ''}`
+        `Algolia App ID: ${config.algolia.appId ? 'Configured' : 'Not Configured'}`
+      );
+      console.log(
+        `Index Prefix: ${config.app.indexPrefix || 'None'}`
       );
     }
   }
@@ -90,6 +93,7 @@ async function main(): Promise<void> {
       {
         appId: config.algolia.appId,
         apiKey: config.algolia.apiKey,
+        indexPrefix: config.app.indexPrefix,
         verbose: args.verbose,
         testMode: mode === 'console' ? 'console' : mode === 'export' ? 'file' : 'none',
       },
@@ -151,6 +155,19 @@ async function main(): Promise<void> {
     if (Object.keys(process.env).length > 0) {
       console.log('Loaded environment variables from .env file');
     }
+
+    const summary = `
+    Summary:
+    Mode: ${config.app.mode}
+    Sitemap: ${config.sitemap.url}
+    Algolia App ID: ${config.algolia.appId ? 'Configured' : 'Not Configured'}
+    Index Prefix: ${config.app.indexPrefix || 'None'}
+    Mapping URL: ${config.app.productMappingUrl}
+    Target Index: ${config.app.index || 'All Mapped Indices'}
+    Partial Mode: ${config.app.partial}
+    `;
+
+    console.log(summary);
   } catch (error) {
     console.error('Error:', error);
     process.exit(1);
