@@ -42,9 +42,6 @@ export function normalizeUrl(url: string): string {
   try {
     const normalized = new URL(url);
 
-    // Remove trailing slash
-    normalized.pathname = normalized.pathname.replace(/\/+$/, '');
-
     // Remove default ports
     if (
       (normalized.protocol === 'http:' && normalized.port === '80') ||
