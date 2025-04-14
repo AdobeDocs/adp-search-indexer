@@ -181,8 +181,5 @@ dist
 test-records/
 *.json
 !package.json
+!package-lock.json
 !tsconfig.json
-
-# Cursor
-.cursorrules
-.cursor
