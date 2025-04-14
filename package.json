@@ -6,7 +6,6 @@
     "build:clean": "rm -rf dist && tsup",
     "export": "node dist/index.js --export",
     "index": "node dist/index.js --index",
-    "verify": "node dist/cli/verify.js",
     "analyze": "node dist/index.js --test-console --verbose",
     "index:partial": "node dist/index.js --index --partial --verbose",
     "index:full": "node dist/index.js --index --no-partial --verbose",

@@ -35,13 +35,10 @@ npm run analyze
 # Export mode (save to JSON files)
 npm run export
 
-# Verify indices (check exported files or Algolia)
-npm run verify
-
 # Default mode (partial update with timestamp-based checking)
 npm run index:partial
 
-# Full reindex (clear and rebuild indices completely)
+# Full reindex (rebuild indices completely from scratch)
 npm run index:full
 ```
 
@@ -133,7 +130,7 @@ npm run index:partial
 
 Performs a complete rebuild of indices matched by your sitemap:
 
-- Clears and rebuilds all matched indices from scratch
+- Rebuilds all matched indices from scratch by overwriting existing records and deleting any records for URLs no longer found in the sitemap for those indices.
 - Updates all records regardless of timestamps
 - Best used when you need to ensure indices are completely refreshed
 - Useful after schema changes or when troubleshooting issues
@@ -341,8 +338,7 @@ This mode completely rebuilds Algolia indices based on the current sitemap and p
     ```
 3.  **What it does:**
     *   Fetches the sitemap.
-    *   **Clears:** *Completely removes all records* from any Algolia index that matches an index name found in the `product-index-map.json` for the processed URLs.
-    *   **Rebuilds:** Indexes all content found in the sitemap for those matched indices from scratch.
+    *   **Rebuilds:** Indexes all content found in the sitemap for those matched indices from scratch. It achieves this by saving all newly generated records and then deleting any existing records in the target Algolia indices whose URLs were not found in the current sitemap processing batch. Effectively, it overwrites the index content based on the latest sitemap data.
     *   **Use Cases:** Needed after significant changes to content structure, mapping logic, Algolia schema/settings, or to recover from inconsistent index states. **Avoid running this routinely.**
 
 ### 4. Analyzing Sitemap & Mappings (No Indexing)
