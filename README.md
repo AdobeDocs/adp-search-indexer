@@ -170,6 +170,43 @@ npm run index:partial -- --index-filter="photoshop,illustrator"
 npm run index:full -- --index-filter="commerce"
 ```
 
+## Configuring Skipped Paths
+
+The indexer automatically skips certain URL paths based on a predefined list to avoid processing irrelevant content (e.g., navigation elements, drafts, internal tools).
+
+This list is currently defined directly in the source code within the `src/services/product-mapping.ts` file.
+
+To add more paths to be skipped:
+
+1.  Open the file `src/services/product-mapping.ts`.
+2.  Locate the `EXCLUDED_PATHS` constant array near the top of the file:
+
+    ```typescript
+    const EXCLUDED_PATHS = [
+      '/nav/',
+      '/nav$', // Skip paths ending in /nav
+      '/fragments/',
+      '/blocks/',
+      '/drafts/',
+      '/tools/',
+      '/tools/sidekick/', // Skip all sidekick content
+      '/internal/',
+      '/test/',
+      '/assets/',
+      '/_reference/',
+      '/github-actions-test/', // Skip test content from github actions
+      // Add your new paths here, e.g.:
+      // '/your-new-path-to-skip/',
+      // '/another/path$', // Can use simple patterns
+    ];
+    ```
+
+3.  Add your desired path patterns to this array.
+4.  Save the file.
+5.  Rebuild the project using `npm run build`.
+
+**Note:** Modifying this list currently requires changing the source code and rebuilding the application. Future versions might introduce configuration options for more flexibility.
+
 ## URL Fragment Handling
 
 The indexer properly handles URL fragments (anchor links) throughout the indexing process:
