@@ -74,25 +74,25 @@ npm run index:full
    Documentation is processed into search-optimized records with the following structure:
    ```typescript
    interface AlgoliaRecord {
-     objectID: string;       // Unique identifier (MD5 hash of URL)
-     url: string;            // Full URL including fragment identifier
-     path: string;           // URL path component without fragment
-     fragment?: string;      // Fragment identifier (anchor) if any
-     indexName: string;      // Name of the Algolia index
-     title: string;          // Content title
-     description: string;    // Content description
-     content: string;        // Processed content
-     headings: string[];     // Array of headings found in content
-     product: string;        // Adobe product identifier
-     type: string;           // Content type (guide, reference, etc.)
-     topics: string[];       // Array of topic tags
-     lastModified: string;   // Content modification date
+     objectID: string; // Unique identifier (MD5 hash of URL)
+     url: string; // Full URL including fragment identifier
+     path: string; // URL path component without fragment
+     fragment?: string; // Fragment identifier (anchor) if any
+     indexName: string; // Name of the Algolia index
+     title: string; // Content title
+     description: string; // Content description
+     content: string; // Processed content
+     headings: string[]; // Array of headings found in content
+     product: string; // Adobe product identifier
+     type: string; // Content type (guide, reference, etc.)
+     topics: string[]; // Array of topic tags
+     lastModified: string; // Content modification date
      sourceLastmod?: string; // Original sitemap lastmod timestamp
-     indexedAt?: string;     // When this record was indexed
+     indexedAt?: string; // When this record was indexed
      hierarchy: {
-       lvl0: string;         // Top level heading
-       lvl1?: string;        // Second level heading
-       lvl2?: string;        // Third level heading
+       lvl0: string; // Top level heading
+       lvl1?: string; // Second level heading
+       lvl2?: string; // Third level heading
      };
      metadata: {
        keywords: string;
@@ -301,14 +301,14 @@ This section provides guidance for common workflows when using the ADP Search In
 
 ### 1. Environment Setup
 
-*   **`.env` File:** Copy `.env.example` to `.env` (`cp .env.example .env`). This file is ignored by Git (`.gitignore`) and should **never** be committed.
-*   **`SITEMAP_URL`**: The full URL to the sitemap index file (e.g., `https://developer.adobe.com/sitemap.xml`).
-*   **`BASE_URL`**: The base domain for the website being indexed (e.g., `https://developer.adobe.com`). This is used to correctly construct URLs if the sitemap contains relative paths (though typically it shouldn't) and potentially for other URL normalizations.
-*   **Algolia Credentials (`ALGOLIA_APP_ID`, `ALGOLIA_API_KEY`)**:
-    *   These are required only when running in `index` mode (`npm run index:partial` or `npm run index:full`).
-    *   Obtain these from the Algolia dashboard for the relevant Adobe Developer site search application. You'll likely need Admin API Key privileges for indexing operations (creating indices, adding/deleting records, setting settings). Consult with the project maintainers if you need access.
-*   **`ALGOLIA_INDEX_NAME`**: (Optional) A base name for indices. If using an `INDEX_PREFIX`, the final index name might be constructed from this prefix and the name defined in the product mapping. Check the Algolia dashboard for existing index naming conventions.
-*   **`PRODUCT_MAPPING_URL`**: (Optional) Defaults to the production mapping file hosted on GitHub (`https://raw.githubusercontent.com/AdobeDocs/search-indices/refs/heads/main/product-index-map.json`). You generally don't need to change this unless you are testing changes to the mapping file itself by pointing to a local file path (`file:///path/to/your/local/product-index-map.json`) or a different remote URL.
+- **`.env` File:** Copy `.env.example` to `.env` (`cp .env.example .env`). This file is ignored by Git (`.gitignore`) and should **never** be committed.
+- **`SITEMAP_URL`**: The full URL to the sitemap index file (e.g., `https://developer.adobe.com/sitemap.xml`).
+- **`BASE_URL`**: The base domain for the website being indexed (e.g., `https://developer.adobe.com`). This is used to correctly construct URLs if the sitemap contains relative paths (though typically it shouldn't) and potentially for other URL normalizations.
+- **Algolia Credentials (`ALGOLIA_APP_ID`, `ALGOLIA_API_KEY`)**:
+  - These are required only when running in `index` mode (`npm run index:partial` or `npm run index:full`).
+  - Obtain these from the Algolia dashboard for the relevant Adobe Developer site search application. You'll likely need Admin API Key privileges for indexing operations (creating indices, adding/deleting records, setting settings). Consult with the project maintainers if you need access.
+- **`ALGOLIA_INDEX_NAME`**: (Optional) A base name for indices. If using an `INDEX_PREFIX`, the final index name might be constructed from this prefix and the name defined in the product mapping. Check the Algolia dashboard for existing index naming conventions.
+- **`PRODUCT_MAPPING_URL`**: (Optional) Defaults to the production mapping file hosted on GitHub (`https://raw.githubusercontent.com/AdobeDocs/search-indices/refs/heads/main/product-index-map.json`). You generally don't need to change this unless you are testing changes to the mapping file itself by pointing to a local file path (`file:///path/to/your/local/product-index-map.json`) or a different remote URL.
 
 ### 2. Indexing Content (Partial Update - Recommended Daily Task)
 
@@ -320,12 +320,12 @@ This is the standard mode for keeping Algolia up-to-date with the latest content
     npm run index:partial
     ```
 3.  **What it does:**
-    *   Fetches the sitemap.
-    *   Compares `lastmod` timestamps in the sitemap with `sourceLastmod` in existing Algolia records.
-    *   **Adds/Updates:** Records for new URLs or URLs with a newer `lastmod` timestamp.
-    *   **Deletes:** Records for URLs present in Algolia but *not* found in the current sitemap (for the matched indices).
-    *   **Ignores:** Records that haven't changed (`lastmod` is the same or older).
-    *   **Preserves:** Records in indices that are *not* referenced by the current product mapping file (prevents accidental deletion of unrelated indices).
+    - Fetches the sitemap.
+    - Compares `lastmod` timestamps in the sitemap with `sourceLastmod` in existing Algolia records.
+    - **Adds/Updates:** Records for new URLs or URLs with a newer `lastmod` timestamp.
+    - **Deletes:** Records for URLs present in Algolia but _not_ found in the current sitemap (for the matched indices).
+    - **Ignores:** Records that haven't changed (`lastmod` is the same or older).
+    - **Preserves:** Records in indices that are _not_ referenced by the current product mapping file (prevents accidental deletion of unrelated indices).
 
 ### 3. Indexing Content (Full Reindex)
 
@@ -337,9 +337,9 @@ This mode completely rebuilds Algolia indices based on the current sitemap and p
     npm run index:full
     ```
 3.  **What it does:**
-    *   Fetches the sitemap.
-    *   **Rebuilds:** Indexes all content found in the sitemap for those matched indices from scratch. It achieves this by saving all newly generated records and then deleting any existing records in the target Algolia indices whose URLs were not found in the current sitemap processing batch. Effectively, it overwrites the index content based on the latest sitemap data.
-    *   **Use Cases:** Needed after significant changes to content structure, mapping logic, Algolia schema/settings, or to recover from inconsistent index states. **Avoid running this routinely.**
+    - Fetches the sitemap.
+    - **Rebuilds:** Indexes all content found in the sitemap for those matched indices from scratch. It achieves this by saving all newly generated records and then deleting any existing records in the target Algolia indices whose URLs were not found in the current sitemap processing batch. Effectively, it overwrites the index content based on the latest sitemap data.
+    - **Use Cases:** Needed after significant changes to content structure, mapping logic, Algolia schema/settings, or to recover from inconsistent index states. **Avoid running this routinely.**
 
 ### 4. Analyzing Sitemap & Mappings (No Indexing)
 
@@ -355,10 +355,10 @@ This mode is useful for checking how URLs map to products/indices based on the c
     npm run analyze -- --verbose
     ```
 4.  **What it does:**
-    *   Fetches the sitemap.
-    *   Applies exclusion rules (`src/services/product-mapping.ts`).
-    *   Uses the product mapping file (`PRODUCT_MAPPING_URL`) to determine which index each valid URL belongs to.
-    *   Prints a summary of total URLs, URLs to process/skip, and (in verbose mode) a breakdown by matched index, top path segments, and potential recommendations for unmapped paths.
+    - Fetches the sitemap.
+    - Applies exclusion rules (`src/services/product-mapping.ts`).
+    - Uses the product mapping file (`PRODUCT_MAPPING_URL`) to determine which index each valid URL belongs to.
+    - Prints a summary of total URLs, URLs to process/skip, and (in verbose mode) a breakdown by matched index, top path segments, and potential recommendations for unmapped paths.
 
 ### 5. Exporting Data Locally (Debugging/Testing)
 
@@ -370,11 +370,11 @@ This mode processes the sitemap and fetches content, creating the Algolia record
     npm run export
     ```
 3.  **What it does:**
-    *   Fetches the sitemap and analyzes URLs.
-    *   Fetches content for valid URLs.
-    *   Generates Algolia record structures (including segmentation).
-    *   Saves the generated records and index settings into JSON files within the `indexed-content/` directory (this directory is gitignored). Each file corresponds to an index (e.g., `indexed-content/photoshop.json`).
-    *   You can then inspect these JSON files to verify the data being generated before sending it to Algolia.
+    - Fetches the sitemap and analyzes URLs.
+    - Fetches content for valid URLs.
+    - Generates Algolia record structures (including segmentation).
+    - Saves the generated records and index settings into JSON files within the `indexed-content/` directory (this directory is gitignored). Each file corresponds to an index (e.g., `indexed-content/photoshop.json`).
+    - You can then inspect these JSON files to verify the data being generated before sending it to Algolia.
 
 ### 6. Updating the Product Index Map
 
@@ -396,21 +396,21 @@ When new products are added to developer.adobe.com or existing ones change their
             "indexPathPrefix": "/photoshop/api"
           }
         ]
-      },
+      }
       // ... other products
     ]
     ```
 3.  **Process:**
-    *   Changes should be proposed via a Pull Request to the `AdobeDocs/search-indices` repository.
-    *   Coordinate with the owners of that repository and the ADP team.
-    *   Once merged, the indexer (both this local version and the serverless function) will automatically pick up the changes on the next run, as it fetches the map from the default `PRODUCT_MAPPING_URL`.
-    *   Run `npm run analyze -- --verbose` locally after changes are merged to verify the new mappings are working as expected.
+    - Changes should be proposed via a Pull Request to the `AdobeDocs/search-indices` repository.
+    - Coordinate with the owners of that repository and the ADP team.
+    - Once merged, the indexer (both this local version and the serverless function) will automatically pick up the changes on the next run, as it fetches the map from the default `PRODUCT_MAPPING_URL`.
+    - Run `npm run analyze -- --verbose` locally after changes are merged to verify the new mappings are working as expected.
 
 ### 7. Standalone vs. Serverless Function
 
-*   **This Repository (`adp-search-indexer`):** This codebase is designed for local development, testing, debugging, analysis, and potentially manual full re-indexing runs.
-*   **Serverless Counterpart (`developer-website-search-engine`):** The core indexing logic (partial updates) is also implemented as an Adobe App Builder serverless function in a separate repository: [adobe-developer-platform/developer-website-search-engine](https://github.com/adobe-developer-platform/developer-website-search-engine). This function typically runs on an automated schedule (e.g., daily cron job) to perform the standard partial updates for production.
-*   **Synchronization:** Currently, fixes and features related to the core indexing logic might need to be implemented and tested here first, and then mirrored in the serverless function repository. Coordinate with **Misha** for any changes needed in the serverless function codebase. This separation exists for historical and deployment reasons; a future merge might occur.
+- **This Repository (`adp-search-indexer`):** This codebase is designed for local development, testing, debugging, analysis, and potentially manual full re-indexing runs.
+- **Serverless Counterpart (`developer-website-search-engine`):** The core indexing logic (partial updates) is also implemented as an Adobe App Builder serverless function in a separate repository: [adobe-developer-platform/developer-website-search-engine](https://github.com/adobe-developer-platform/developer-website-search-engine). This function typically runs on an automated schedule (e.g., daily cron job) to perform the standard partial updates for production.
+- **Synchronization:** Currently, fixes and features related to the core indexing logic might need to be implemented and tested here first, and then mirrored in the serverless function repository. Coordinate with **Misha** for any changes needed in the serverless function codebase. This separation exists for historical and deployment reasons; a future merge might occur.
 
 ## Development
 

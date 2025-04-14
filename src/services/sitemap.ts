@@ -13,7 +13,6 @@ import { ProductMappingService } from './product-mapping';
  * @throws An error if the sitemap cannot be fetched.
  */
 export async function fetchSitemap(sitemapUrl: string, verbose = false): Promise<SitemapUrl[]> {
-
   if (verbose) {
     console.log(`Fetching sitemap from: ${sitemapUrl}`);
   }
