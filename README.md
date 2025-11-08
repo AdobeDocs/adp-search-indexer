@@ -1,5 +1,7 @@
 # ADP Search Indexer
 
+UPDATE: This indexer is no longer in use and has been moved to https://github.com/adobe-developer-platform/developer-website-search-engine 
+
 A specialized search indexer for [developer.adobe.com](https://developer.adobe.com), built by the Adobe Developer Platform (ADP) team. It processes documentation content and indexes it to Algolia to power the developer portal's search functionality.
 
 ## Overview
